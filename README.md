@@ -389,15 +389,24 @@ The KMC engine is validated against the analytical Langmuir isotherm for CO adso
 KMC 引擎通过 CO/Pd(100) 吸附脱附与解析 Langmuir 等温线对比验证：
 
 ```
-T = 600 K, p_CO = 1 bar, 30×30 lattice
+$ ./target/release/mykmc validate
 
-  ΔG [eV]    θ_KMC    θ_Langmuir    Status
-    -0.5     0.9999       0.9999      PASS
-    -0.3     0.9968       0.9970      PASS
-    -0.1     0.8742       0.8737      PASS
-     0.0     0.5002       0.5000      PASS
-    +0.1     0.1261       0.1263      PASS
+T=600 K, p_CO=1 bar, 30x30 lattice
+
+    dG[eV]        KMC        Langmuir   Status
+------------------------------------------------
+      -0.5     0.9998          0.9999     PASS
+      -0.3     0.9964          0.9970     PASS
+      -0.1     0.8729          0.8737     PASS
+       0.0     0.4986          0.5000     PASS
+       0.1     0.1262          0.1263     PASS
+
+All PASSED!
 ```
+
+Note: KMC is stochastic — exact values vary slightly between runs, but all stay within <1% of the analytical Langmuir isotherm.
+
+注意：KMC 是随机模拟，每次运行数值会有微小波动，但均在解析 Langmuir 等温线的 1% 误差范围内。
 
 All tests pass with relative error < 1%.
 
