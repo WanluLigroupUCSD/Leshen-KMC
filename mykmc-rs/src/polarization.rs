@@ -2,13 +2,14 @@
 ///
 /// Workflow:
 ///   1. Load DFT energies at multiple potentials from JSON
-///   2. Build energy landscape with interpolated Ea(U) via cubic spline
+///   2. Build energy landscape with Ea(U) via cubic spline or quadratic fit
 ///   3. Create microkinetic model with potential-dependent rates
 ///   4. Sweep potential → steady state → TOF → current density
 ///
-/// Two input modes:
-///   (a) Direct Ea(U) tables:  InterpolatedBarrier
-///   (b) Energy surfaces E_IS(U), E_TS(U), E_FS(U):  EnergyLandscape
+/// Three fitting modes for Ea(U):
+///   (a) Cubic spline interpolation through tabulated Ea(U) points  [default]
+///   (b) Quadratic regression:  Ω(U) = aU² + bU + c  fitted to DFT data
+///   (c) Direct quadratic coefficients (user provides a, b, c per state)
 
 use std::collections::HashMap;
 use std::fs;
@@ -124,28 +125,169 @@ impl CubicSpline {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  InterpolatedBarrier: Ea(U) from tabulated DFT data
+//  Grand canonical quadratic energy: Ω(U) = aU² + bU + c
 // ═══════════════════════════════════════════════════════════════════
 
-/// Interpolated activation barrier Ea(U) from tabulated DFT data.
+/// Grand canonical energy as a quadratic function of applied potential.
 ///
-/// Uses natural cubic spline (falls back to linear for < 3 points).
-/// Extrapolates beyond data range using boundary polynomial segments.
+/// Ω(U) = a·U² + b·U + c
+///
+/// Physical origin: in constant-potential DFT, the grand canonical energy
+/// varies parabolically with potential due to the roughly constant
+/// interfacial capacitance:  a ≈ -C/2,  b relates to the equilibrium
+/// charge,  c = Ω(0).
+#[derive(Clone, Debug)]
+pub struct QuadraticEnergy {
+    pub a: f64,
+    pub b: f64,
+    pub c: f64,
+}
+
+impl QuadraticEnergy {
+    pub fn new(a: f64, b: f64, c: f64) -> Self {
+        Self { a, b, c }
+    }
+
+    /// Evaluate Ω(U).
+    pub fn evaluate(&self, u: f64) -> f64 {
+        self.a * u * u + self.b * u + self.c
+    }
+
+    /// Fit Ω(U) = aU² + bU + c to tabulated (U, E) data via least squares.
+    ///
+    /// Returns (QuadraticEnergy, r_squared).
+    pub fn fit(u_data: &[f64], e_data: &[f64]) -> (Self, f64) {
+        assert!(u_data.len() >= 3, "Need >= 3 points for quadratic fit");
+        assert_eq!(u_data.len(), e_data.len());
+
+        let n = u_data.len() as f64;
+
+        // Normal equations:  X^T X β = X^T y
+        //   X = [[u², u, 1], ...],  y = [e, ...],  β = [a, b, c]
+        let su4: f64 = u_data.iter().map(|u| u.powi(4)).sum();
+        let su3: f64 = u_data.iter().map(|u| u.powi(3)).sum();
+        let su2: f64 = u_data.iter().map(|u| u.powi(2)).sum();
+        let su1: f64 = u_data.iter().sum();
+
+        let su2e: f64 = u_data.iter().zip(e_data).map(|(u, e)| u * u * e).sum();
+        let su1e: f64 = u_data.iter().zip(e_data).map(|(u, e)| u * e).sum();
+        let se: f64 = e_data.iter().sum();
+
+        let (a, b, c) = solve_3x3(
+            [su4, su3, su2, su3, su2, su1, su2, su1, n],
+            [su2e, su1e, se],
+        );
+
+        // R² = 1 - SS_res / SS_tot
+        let e_mean = se / n;
+        let ss_tot: f64 = e_data.iter().map(|e| (e - e_mean).powi(2)).sum();
+        let ss_res: f64 = u_data
+            .iter()
+            .zip(e_data)
+            .map(|(u, e)| {
+                let predicted = a * u * u + b * u + c;
+                (e - predicted).powi(2)
+            })
+            .sum();
+        let r2 = if ss_tot > 0.0 { 1.0 - ss_res / ss_tot } else { 1.0 };
+
+        (Self { a, b, c }, r2)
+    }
+}
+
+/// Solve 3×3 linear system Ax = b via Gaussian elimination with partial pivoting.
+fn solve_3x3(mat: [f64; 9], rhs: [f64; 3]) -> (f64, f64, f64) {
+    let mut a = [
+        [mat[0], mat[1], mat[2]],
+        [mat[3], mat[4], mat[5]],
+        [mat[6], mat[7], mat[8]],
+    ];
+    let mut b = [rhs[0], rhs[1], rhs[2]];
+
+    for col in 0..3 {
+        // Partial pivoting
+        let mut max_row = col;
+        let mut max_val = a[col][col].abs();
+        for row in col + 1..3 {
+            if a[row][col].abs() > max_val {
+                max_val = a[row][col].abs();
+                max_row = row;
+            }
+        }
+        a.swap(col, max_row);
+        b.swap(col, max_row);
+
+        // Eliminate below
+        for row in col + 1..3 {
+            let factor = a[row][col] / a[col][col];
+            for j in col..3 {
+                a[row][j] -= factor * a[col][j];
+            }
+            b[row] -= factor * b[col];
+        }
+    }
+
+    let c = b[2] / a[2][2];
+    let bv = (b[1] - a[1][2] * c) / a[1][1];
+    let av = (b[0] - a[0][1] * bv - a[0][2] * c) / a[0][0];
+    (av, bv, c)
+}
+
+/// Fitting mode for constructing Ea(U).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FitMode {
+    /// Natural cubic spline interpolation (default).
+    Spline,
+    /// Quadratic regression: Ω(U) = aU² + bU + c.
+    Quadratic,
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  InterpolatedBarrier: Ea(U) from tabulated or fitted data
+// ═══════════════════════════════════════════════════════════════════
+
+#[derive(Clone)]
+enum BarrierKind {
+    Spline(CubicSpline),
+    Quadratic(QuadraticEnergy),
+}
+
+/// Activation barrier Ea(U) supporting multiple representations:
+///  - Cubic spline through tabulated data
+///  - Quadratic fit (aU² + bU + c) to tabulated data
+///  - Direct quadratic coefficients
 #[derive(Clone)]
 pub struct InterpolatedBarrier {
-    spline: CubicSpline,
+    kind: BarrierKind,
 }
 
 impl InterpolatedBarrier {
+    /// Create from tabulated data using cubic spline.
     pub fn new(u_data: Vec<f64>, ea_data: Vec<f64>) -> Self {
         Self {
-            spline: CubicSpline::new(u_data, ea_data),
+            kind: BarrierKind::Spline(CubicSpline::new(u_data, ea_data)),
+        }
+    }
+
+    /// Create from tabulated data using quadratic fit. Returns (barrier, R²).
+    pub fn new_quadratic_fit(u_data: &[f64], ea_data: &[f64]) -> (Self, f64) {
+        let (qe, r2) = QuadraticEnergy::fit(u_data, ea_data);
+        (Self { kind: BarrierKind::Quadratic(qe) }, r2)
+    }
+
+    /// Create directly from quadratic coefficients: Ea(U) = aU² + bU + c.
+    pub fn from_quadratic(a: f64, b: f64, c: f64) -> Self {
+        Self {
+            kind: BarrierKind::Quadratic(QuadraticEnergy::new(a, b, c)),
         }
     }
 
     /// Return Ea [eV] at potential U [V]. Clamped to >= 0.
     pub fn evaluate(&self, u: f64) -> f64 {
-        self.spline.evaluate(u).max(0.0)
+        match &self.kind {
+            BarrierKind::Spline(s) => s.evaluate(u).max(0.0),
+            BarrierKind::Quadratic(q) => q.evaluate(u).max(0.0),
+        }
     }
 
     /// Create a TST rate function for use in MicroKineticModel.
@@ -223,6 +365,121 @@ impl EnergyLandscape {
         }
     }
 
+    /// Create from tabulated data using quadratic regression on each state.
+    ///
+    /// Fits Ω(U) = aU² + bU + c to each intermediate state and TS,
+    /// then computes barriers as differences of the fitted parabolas:
+    ///   Ea_fwd(U) = Ω_TS(U) - Ω_IS(U)   (a quadratic itself)
+    ///
+    /// Prints fit quality (R²) for each state.
+    pub fn new_quadratic_fit(
+        potentials: Vec<f64>,
+        state_energies: &HashMap<String, Vec<f64>>,
+        ts_energies: &HashMap<(String, String), Vec<f64>>,
+    ) -> Self {
+        let mut barriers_fwd = HashMap::new();
+        let mut barriers_rev = HashMap::new();
+
+        // Fit each state energy to a quadratic
+        let mut state_fits: HashMap<String, QuadraticEnergy> = HashMap::new();
+        eprintln!("\nQuadratic fits for state energies:");
+        eprintln!("  {:>12}  {:>10}  {:>10}  {:>10}  {:>6}",
+                  "State", "a", "b", "c", "R²");
+        eprintln!("  {}  {}  {}  {}  {}",
+                  "-".repeat(12), "-".repeat(10), "-".repeat(10),
+                  "-".repeat(10), "-".repeat(6));
+
+        for (name, energies) in state_energies {
+            let (qe, r2) = QuadraticEnergy::fit(&potentials, energies);
+            eprintln!("  {:>12}  {:>10.5}  {:>10.5}  {:>10.5}  {:>6.4}",
+                      name, qe.a, qe.b, qe.c, r2);
+            state_fits.insert(name.clone(), qe);
+        }
+
+        // Fit each TS energy and compute barrier quadratics
+        eprintln!("\nQuadratic fits for TS energies:");
+        eprintln!("  {:>20}  {:>10}  {:>10}  {:>10}  {:>6}",
+                  "Transition", "a", "b", "c", "R²");
+        eprintln!("  {}  {}  {}  {}  {}",
+                  "-".repeat(20), "-".repeat(10), "-".repeat(10),
+                  "-".repeat(10), "-".repeat(6));
+
+        for ((is_name, fs_name), e_ts) in ts_energies {
+            let (ts_fit, r2) = QuadraticEnergy::fit(&potentials, e_ts);
+            eprintln!("  {:>20}  {:>10.5}  {:>10.5}  {:>10.5}  {:>6.4}",
+                      format!("{}->{}",is_name, fs_name), ts_fit.a, ts_fit.b, ts_fit.c, r2);
+
+            let is_fit = state_fits.get(is_name)
+                .unwrap_or_else(|| panic!("Missing state fit for '{}'", is_name));
+            let fs_fit = state_fits.get(fs_name)
+                .unwrap_or_else(|| panic!("Missing state fit for '{}'", fs_name));
+
+            // Barrier = Ω_TS - Ω_IS  (difference of quadratics is a quadratic)
+            let key = (is_name.clone(), fs_name.clone());
+            barriers_fwd.insert(
+                key.clone(),
+                InterpolatedBarrier::from_quadratic(
+                    ts_fit.a - is_fit.a,
+                    ts_fit.b - is_fit.b,
+                    ts_fit.c - is_fit.c,
+                ),
+            );
+            barriers_rev.insert(
+                key,
+                InterpolatedBarrier::from_quadratic(
+                    ts_fit.a - fs_fit.a,
+                    ts_fit.b - fs_fit.b,
+                    ts_fit.c - fs_fit.c,
+                ),
+            );
+        }
+
+        Self { potentials, barriers_fwd, barriers_rev }
+    }
+
+    /// Create directly from user-provided quadratic coefficients.
+    ///
+    /// Each state/TS is described by Ω(U) = aU² + bU + c.
+    /// Barrier coefficients are computed as differences.
+    pub fn from_quadratic_coefficients(
+        state_coefficients: &HashMap<String, [f64; 3]>,
+        ts_coefficients: &HashMap<(String, String), [f64; 3]>,
+    ) -> Self {
+        let mut barriers_fwd = HashMap::new();
+        let mut barriers_rev = HashMap::new();
+
+        for ((is_name, fs_name), ts_abc) in ts_coefficients {
+            let is_abc = state_coefficients.get(is_name)
+                .unwrap_or_else(|| panic!("Missing coefficients for '{}'", is_name));
+            let fs_abc = state_coefficients.get(fs_name)
+                .unwrap_or_else(|| panic!("Missing coefficients for '{}'", fs_name));
+
+            let key = (is_name.clone(), fs_name.clone());
+            barriers_fwd.insert(
+                key.clone(),
+                InterpolatedBarrier::from_quadratic(
+                    ts_abc[0] - is_abc[0],
+                    ts_abc[1] - is_abc[1],
+                    ts_abc[2] - is_abc[2],
+                ),
+            );
+            barriers_rev.insert(
+                key,
+                InterpolatedBarrier::from_quadratic(
+                    ts_abc[0] - fs_abc[0],
+                    ts_abc[1] - fs_abc[1],
+                    ts_abc[2] - fs_abc[2],
+                ),
+            );
+        }
+
+        Self {
+            potentials: Vec::new(),
+            barriers_fwd,
+            barriers_rev,
+        }
+    }
+
     /// Check if a transition IS→FS exists in the landscape.
     pub fn has_transition(&self, is: &str, fs: &str) -> bool {
         self.barriers_fwd
@@ -251,8 +508,15 @@ impl EnergyLandscape {
             .map(|b| b.make_rate_fn())
     }
 
-    /// Print barrier summary at tabulated potentials.
+    /// Print barrier summary. Uses tabulated potentials if available,
+    /// otherwise generates a default range [-2.0, 0.0] with 5 points.
     pub fn summary(&self) {
+        let display_u: Vec<f64> = if self.potentials.is_empty() {
+            vec![-2.0, -1.5, -1.0, -0.5, 0.0]
+        } else {
+            self.potentials.clone()
+        };
+
         println!("Energy Landscape Summary");
         println!("{}", "=".repeat(70));
         for ((is, fs), fwd) in &self.barriers_fwd {
@@ -268,7 +532,7 @@ impl EnergyLandscape {
                 "-".repeat(12),
                 "-".repeat(12)
             );
-            for &u in &self.potentials {
+            for &u in &display_u {
                 println!(
                     "    {:>8.3}  {:>12.4}  {:>12.4}",
                     u,
@@ -284,71 +548,125 @@ impl EnergyLandscape {
 //  DFT data loading from JSON
 // ═══════════════════════════════════════════════════════════════════
 
+/// Parsed DFT data from JSON, supporting two formats.
+pub enum DftData {
+    /// Tabulated energies at discrete potentials.
+    Tabulated {
+        potentials: Vec<f64>,
+        state_energies: HashMap<String, Vec<f64>>,
+        ts_energies: HashMap<(String, String), Vec<f64>>,
+    },
+    /// Direct quadratic coefficients:  Ω(U) = aU² + bU + c.
+    QuadraticCoefficients {
+        state_coefficients: HashMap<String, [f64; 3]>,
+        ts_coefficients: HashMap<(String, String), [f64; 3]>,
+    },
+}
+
 /// Load DFT energy data from a JSON file.
 ///
-/// Expected format:
+/// Auto-detects two formats:
+///
+/// **Format 1 — Tabulated** (default):
 /// ```json
 /// {
 ///   "potentials": [-2.0, -1.5, -1.0, -0.5, 0.0],
-///   "state_energies": { "N2*": [...], "NNH*": [...], ... },
-///   "ts_energies": { "N2*->NNH*": [...], ... }
+///   "state_energies": { "N2*": [...], "NNH*": [...] },
+///   "ts_energies": { "N2*->NNH*": [...] }
 /// }
 /// ```
 ///
-/// Returns (potentials, state_energies, ts_energies) with TS keys as (IS, FS) tuples.
-pub fn load_dft_data(
-    path: &str,
-) -> (
-    Vec<f64>,
-    HashMap<String, Vec<f64>>,
-    HashMap<(String, String), Vec<f64>>,
-) {
+/// **Format 2 — Quadratic coefficients**:
+/// ```json
+/// {
+///   "mode": "quadratic_coefficients",
+///   "state_coefficients": { "N2*": [a, b, c], ... },
+///   "ts_coefficients": { "N2*->NNH*": [a, b, c], ... }
+/// }
+/// ```
+/// where Ω(U) = a·U² + b·U + c  in eV.
+pub fn load_dft_data(path: &str) -> DftData {
     let text =
         fs::read_to_string(path).unwrap_or_else(|e| panic!("Cannot read '{}': {}", path, e));
     let data: serde_json::Value =
         serde_json::from_str(&text).unwrap_or_else(|e| panic!("Invalid JSON in '{}': {}", path, e));
 
-    let potentials: Vec<f64> = data["potentials"]
-        .as_array()
-        .expect("'potentials' must be an array")
-        .iter()
-        .map(|v| v.as_f64().expect("potential values must be numbers"))
-        .collect();
+    // Detect format
+    let mode = data.get("mode").and_then(|v| v.as_str()).unwrap_or("tabulated");
 
-    let mut state_energies = HashMap::new();
-    for (key, vals) in data["state_energies"]
-        .as_object()
-        .expect("'state_energies' must be an object")
-    {
-        let energies: Vec<f64> = vals
-            .as_array()
-            .unwrap_or_else(|| panic!("state_energies['{}'] must be an array", key))
-            .iter()
-            .map(|v| v.as_f64().unwrap())
-            .collect();
-        state_energies.insert(key.clone(), energies);
-    }
-
-    let mut ts_energies: HashMap<(String, String), Vec<f64>> = HashMap::new();
-    for (key, vals) in data["ts_energies"]
-        .as_object()
-        .expect("'ts_energies' must be an object")
-    {
-        let energies: Vec<f64> = vals
-            .as_array()
-            .unwrap_or_else(|| panic!("ts_energies['{}'] must be an array", key))
-            .iter()
-            .map(|v| v.as_f64().unwrap())
-            .collect();
-        // Parse "IS->FS" format
-        if let Some((is, fs)) = key.split_once("->") {
-            ts_energies.insert((is.trim().to_string(), fs.trim().to_string()), energies);
-        } else {
-            eprintln!("Warning: skipping TS key '{}' (expected 'IS->FS' format)", key);
+    if mode == "quadratic_coefficients" {
+        // Format 2: direct coefficients
+        let mut state_coefficients = HashMap::new();
+        for (key, vals) in data["state_coefficients"]
+            .as_object()
+            .expect("'state_coefficients' must be an object")
+        {
+            let abc: Vec<f64> = vals.as_array().unwrap().iter()
+                .map(|v| v.as_f64().unwrap()).collect();
+            assert_eq!(abc.len(), 3, "Coefficients for '{}' must have 3 elements [a, b, c]", key);
+            state_coefficients.insert(key.clone(), [abc[0], abc[1], abc[2]]);
         }
-    }
 
-    (potentials, state_energies, ts_energies)
+        let mut ts_coefficients = HashMap::new();
+        for (key, vals) in data["ts_coefficients"]
+            .as_object()
+            .expect("'ts_coefficients' must be an object")
+        {
+            let abc: Vec<f64> = vals.as_array().unwrap().iter()
+                .map(|v| v.as_f64().unwrap()).collect();
+            assert_eq!(abc.len(), 3, "Coefficients for '{}' must have 3 elements [a, b, c]", key);
+            if let Some((is, fs)) = key.split_once("->") {
+                ts_coefficients.insert(
+                    (is.trim().to_string(), fs.trim().to_string()),
+                    [abc[0], abc[1], abc[2]],
+                );
+            }
+        }
+
+        DftData::QuadraticCoefficients { state_coefficients, ts_coefficients }
+    } else {
+        // Format 1: tabulated
+        let potentials: Vec<f64> = data["potentials"]
+            .as_array()
+            .expect("'potentials' must be an array")
+            .iter()
+            .map(|v| v.as_f64().expect("potential values must be numbers"))
+            .collect();
+
+        let mut state_energies = HashMap::new();
+        for (key, vals) in data["state_energies"]
+            .as_object()
+            .expect("'state_energies' must be an object")
+        {
+            let energies: Vec<f64> = vals
+                .as_array()
+                .unwrap_or_else(|| panic!("state_energies['{}'] must be an array", key))
+                .iter()
+                .map(|v| v.as_f64().unwrap())
+                .collect();
+            state_energies.insert(key.clone(), energies);
+        }
+
+        let mut ts_energies: HashMap<(String, String), Vec<f64>> = HashMap::new();
+        for (key, vals) in data["ts_energies"]
+            .as_object()
+            .expect("'ts_energies' must be an object")
+        {
+            let energies: Vec<f64> = vals
+                .as_array()
+                .unwrap_or_else(|| panic!("ts_energies['{}'] must be an array", key))
+                .iter()
+                .map(|v| v.as_f64().unwrap())
+                .collect();
+            if let Some((is, fs)) = key.split_once("->") {
+                ts_energies.insert((is.trim().to_string(), fs.trim().to_string()), energies);
+            } else {
+                eprintln!("Warning: skipping TS key '{}' (expected 'IS->FS' format)", key);
+            }
+        }
+
+        DftData::Tabulated { potentials, state_energies, ts_energies }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -715,6 +1033,83 @@ mod tests {
         let j = tof_to_current_density(1.0, 1.0, 1e-20);
         let expected = E_CHARGE / 1e-20 * 0.1; // e / A_site * 0.1
         assert!((j - expected).abs() / expected < 1e-10);
+    }
+
+    #[test]
+    fn test_quadratic_fit_exact() {
+        // Data generated from y = 0.5*x² - 1.0*x + 2.0
+        let u = vec![-2.0, -1.0, 0.0, 1.0, 2.0];
+        let e: Vec<f64> = u.iter().map(|x| 0.5 * x * x - 1.0 * x + 2.0).collect();
+        let (qe, r2) = QuadraticEnergy::fit(&u, &e);
+
+        assert!((qe.a - 0.5).abs() < 1e-10, "a = {} != 0.5", qe.a);
+        assert!((qe.b - (-1.0)).abs() < 1e-10, "b = {} != -1.0", qe.b);
+        assert!((qe.c - 2.0).abs() < 1e-10, "c = {} != 2.0", qe.c);
+        assert!((r2 - 1.0).abs() < 1e-10, "R² = {} != 1.0", r2);
+    }
+
+    #[test]
+    fn test_quadratic_fit_noisy() {
+        // Slightly noisy quadratic data — R² should still be high
+        let u = vec![-2.0, -1.0, 0.0, 1.0, 2.0];
+        let e = vec![4.01, 1.02, -0.01, 0.98, 3.99]; // ≈ x²
+        let (qe, r2) = QuadraticEnergy::fit(&u, &e);
+
+        assert!(r2 > 0.999, "R² = {} too low for near-perfect data", r2);
+        assert!((qe.a - 1.0).abs() < 0.02);
+    }
+
+    #[test]
+    fn test_barrier_from_quadratic() {
+        let barrier = InterpolatedBarrier::from_quadratic(0.1, -0.5, 2.0);
+        // At U=0: Ea = 2.0
+        assert!((barrier.evaluate(0.0) - 2.0).abs() < 1e-10);
+        // At U=2.5: Ea = 0.1*6.25 - 1.25 + 2.0 = 1.375
+        assert!((barrier.evaluate(2.5) - 1.375).abs() < 1e-10);
+        // Clamped to >= 0
+        assert!(barrier.evaluate(100.0) >= 0.0);
+    }
+
+    #[test]
+    fn test_landscape_quadratic_fit() {
+        let potentials = vec![-2.0, -1.0, 0.0, 1.0, 2.0];
+        let mut state_energies = HashMap::new();
+        // IS: constant at 0
+        state_energies.insert("A*".to_string(), vec![0.0, 0.0, 0.0, 0.0, 0.0]);
+        // FS: linear in U
+        state_energies.insert("B*".to_string(), vec![-2.0, -1.0, 0.0, 1.0, 2.0]);
+
+        let mut ts_energies = HashMap::new();
+        // TS: quadratic, Ea_fwd = TS - IS = 0.1*U² + 2.0
+        let ts: Vec<f64> = potentials.iter().map(|u| 0.1 * u * u + 2.0).collect();
+        ts_energies.insert(("A*".to_string(), "B*".to_string()), ts);
+
+        let landscape = EnergyLandscape::new_quadratic_fit(
+            potentials, &state_energies, &ts_energies);
+
+        assert!(landscape.has_transition("A*", "B*"));
+        // At U=0: Ea_fwd = TS(0) - IS(0) = 2.0 - 0.0 = 2.0
+        let ea = landscape.barriers_fwd[&("A*".to_string(), "B*".to_string())].evaluate(0.0);
+        assert!((ea - 2.0).abs() < 0.01, "Ea_fwd(0) = {} != 2.0", ea);
+    }
+
+    #[test]
+    fn test_landscape_from_coefficients() {
+        let mut state_coeff = HashMap::new();
+        state_coeff.insert("A*".to_string(), [0.0, 0.0, 0.0]); // E=0
+        state_coeff.insert("B*".to_string(), [0.0, 0.0, -1.0]); // E=-1
+
+        let mut ts_coeff = HashMap::new();
+        ts_coeff.insert(("A*".to_string(), "B*".to_string()), [0.0, 0.0, 1.5]);
+
+        let landscape = EnergyLandscape::from_quadratic_coefficients(
+            &state_coeff, &ts_coeff);
+
+        // Ea_fwd = 1.5 - 0.0 = 1.5, Ea_rev = 1.5 - (-1.0) = 2.5
+        let fwd = landscape.barriers_fwd[&("A*".to_string(), "B*".to_string())].evaluate(0.0);
+        let rev = landscape.barriers_rev[&("A*".to_string(), "B*".to_string())].evaluate(0.0);
+        assert!((fwd - 1.5).abs() < 1e-10);
+        assert!((rev - 2.5).abs() < 1e-10);
     }
 
     #[test]

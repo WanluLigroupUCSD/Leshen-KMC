@@ -106,6 +106,9 @@ enum Commands {
         u_max: f64,
         #[arg(long, default_value_t = 50)]
         u_steps: usize,
+        /// Fitting mode: "spline" (cubic spline, default) or "quadratic" (Ω=aU²+bU+c)
+        #[arg(long, default_value = "spline")]
+        fit: String,
         /// Output filename
         #[arg(long, default_value = "polarization_curve.dat")]
         output: String,
@@ -234,19 +237,42 @@ fn scan_temperature(u: f64, t_min: f64, t_max: f64, t_steps: usize, cycle: bool)
 }
 
 fn run_polarization(dft_path: &str, temp: f64, p_n2: f64,
-                     u_min: f64, u_max: f64, u_steps: usize, output: &str) {
+                     u_min: f64, u_max: f64, u_steps: usize,
+                     fit_mode: &str, output: &str) {
     println!("{}", "=".repeat(65));
     println!("  Polarization Curve from DFT Data");
     println!("{}", "=".repeat(65));
     println!("  DFT data: {}", dft_path);
     println!("  T = {} K, p_N2 = {} bar", temp, p_n2);
     println!("  U range: [{:.2}, {:.2}] V ({} points)", u_min, u_max, u_steps);
+    println!("  Fit mode: {}", fit_mode);
     println!();
 
-    // Load DFT data and build energy landscape
-    let (potentials, state_energies, ts_energies) = polarization::load_dft_data(dft_path);
-    let landscape = polarization::EnergyLandscape::new(
-        potentials, &state_energies, &ts_energies);
+    // Load DFT data (auto-detects format)
+    let dft_data = polarization::load_dft_data(dft_path);
+
+    // Build energy landscape based on data format and fit mode
+    let landscape = match dft_data {
+        polarization::DftData::Tabulated { potentials, state_energies, ts_energies } => {
+            match fit_mode {
+                "quadratic" => {
+                    println!("Using quadratic regression: Ω(U) = aU² + bU + c\n");
+                    polarization::EnergyLandscape::new_quadratic_fit(
+                        potentials, &state_energies, &ts_energies)
+                }
+                _ => {
+                    println!("Using cubic spline interpolation\n");
+                    polarization::EnergyLandscape::new(
+                        potentials, &state_energies, &ts_energies)
+                }
+            }
+        }
+        polarization::DftData::QuadraticCoefficients { state_coefficients, ts_coefficients } => {
+            println!("Using direct quadratic coefficients\n");
+            polarization::EnergyLandscape::from_quadratic_coefficients(
+                &state_coefficients, &ts_coefficients)
+        }
+    };
     landscape.summary();
 
     // Build MKM with interpolated barriers
@@ -318,7 +344,7 @@ fn main() {
         Commands::ScanT { u, t_min, t_max, t_steps, cycle } =>
             scan_temperature(u, t_min, t_max, t_steps, cycle),
         Commands::Validate => validate(),
-        Commands::Polarization { dft_data, t, p_n2, u_min, u_max, u_steps, output } =>
-            run_polarization(&dft_data, t, p_n2, u_min, u_max, u_steps, &output),
+        Commands::Polarization { dft_data, t, p_n2, u_min, u_max, u_steps, fit, output } =>
+            run_polarization(&dft_data, t, p_n2, u_min, u_max, u_steps, &fit, &output),
     }
 }
