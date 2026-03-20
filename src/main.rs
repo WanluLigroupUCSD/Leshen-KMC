@@ -19,6 +19,7 @@ mod engine;
 mod microkinetic;
 mod analysis;
 mod models;
+mod polarization;
 
 use clap::{Parser, Subcommand};
 use crate::engine::KMCEngine;
@@ -90,6 +91,25 @@ enum Commands {
     },
     /// Validate: CO/Pd(100) vs Langmuir isotherm
     Validate,
+    /// Compute polarization curve from DFT data
+    Polarization {
+        /// Path to DFT energy JSON file
+        #[arg(long)]
+        dft_data: String,
+        #[arg(long, default_value_t = 300.0)]
+        t: f64,
+        #[arg(long, default_value_t = 1.0)]
+        p_n2: f64,
+        #[arg(long, default_value_t = -2.0, allow_hyphen_values = true)]
+        u_min: f64,
+        #[arg(long, default_value_t = 0.0)]
+        u_max: f64,
+        #[arg(long, default_value_t = 50)]
+        u_steps: usize,
+        /// Output filename
+        #[arg(long, default_value = "polarization_curve.dat")]
+        output: String,
+    },
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -213,6 +233,43 @@ fn scan_temperature(u: f64, t_min: f64, t_max: f64, t_steps: usize, cycle: bool)
     }
 }
 
+fn run_polarization(dft_path: &str, temp: f64, p_n2: f64,
+                     u_min: f64, u_max: f64, u_steps: usize, output: &str) {
+    println!("{}", "=".repeat(65));
+    println!("  Polarization Curve from DFT Data");
+    println!("{}", "=".repeat(65));
+    println!("  DFT data: {}", dft_path);
+    println!("  T = {} K, p_N2 = {} bar", temp, p_n2);
+    println!("  U range: [{:.2}, {:.2}] V ({} points)", u_min, u_max, u_steps);
+    println!();
+
+    // Load DFT data and build energy landscape
+    let (potentials, state_energies, ts_energies) = polarization::load_dft_data(dft_path);
+    let landscape = polarization::EnergyLandscape::new(
+        potentials, &state_energies, &ts_energies);
+    landscape.summary();
+
+    // Build MKM with interpolated barriers
+    let mut mkm = polarization::build_n2_mkm_dft(&landscape);
+    mkm.parameters.insert("p_N2".into(), p_n2);
+
+    // Generate U range
+    let u_range: Vec<f64> = (0..u_steps)
+        .map(|i| u_min + (u_max - u_min) * i as f64 / (u_steps - 1).max(1) as f64)
+        .collect();
+
+    // N₂ + 6H⁺ + 6e⁻ → 2NH₃  →  3 e⁻ per NH₃ molecule
+    let n_electrons: std::collections::HashMap<String, f64> =
+        [("NH3_production".into(), 3.0)].into_iter().collect();
+    let a_site = (3.2e-10_f64).powi(2);
+
+    let result = polarization::compute_polarization_curve(
+        &mut mkm, &u_range, temp, &n_electrons, a_site, true);
+
+    result.print_table();
+    result.save(output, &mkm.species);
+}
+
 fn validate() {
     println!("{}", "=".repeat(60));
     println!("  Validation: CO/Pd(100) vs Langmuir Isotherm");
@@ -261,5 +318,7 @@ fn main() {
         Commands::ScanT { u, t_min, t_max, t_steps, cycle } =>
             scan_temperature(u, t_min, t_max, t_steps, cycle),
         Commands::Validate => validate(),
+        Commands::Polarization { dft_data, t, p_n2, u_min, u_max, u_steps, output } =>
+            run_polarization(&dft_data, t, p_n2, u_min, u_max, u_steps, &output),
     }
 }
