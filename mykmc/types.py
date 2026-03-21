@@ -18,10 +18,12 @@ class Species:
 class Site:
     """A site within a lattice layer."""
 
-    def __init__(self, name, pos=(0.5, 0.5, 0.5), default_species='empty'):
+    def __init__(self, name, pos=(0.5, 0.5, 0.5), default_species='empty',
+                 site_type=None):
         self.name = name
         self.pos = tuple(pos) if not isinstance(pos, tuple) else pos
         self.default_species = default_species
+        self.site_type = site_type  # int or str label for site type
 
 
 class Layer:
@@ -31,8 +33,9 @@ class Layer:
         self.name = name
         self.sites = []
 
-    def add_site(self, name, pos=(0.5, 0.5, 0.5), default_species='empty'):
-        site = Site(name, pos, default_species)
+    def add_site(self, name, pos=(0.5, 0.5, 0.5), default_species='empty',
+                 site_type=None):
+        site = Site(name, pos, default_species, site_type=site_type)
         self.sites.append(site)
         return site
 
@@ -89,14 +92,68 @@ class Process:
     """An elementary process/reaction in the KMC model."""
 
     def __init__(self, name, conditions=None, actions=None,
-                 rate_constant='0', tof_count=None, enabled=True):
+                 rate_constant='0', tof_count=None, enabled=True,
+                 reverse_of=None, site_type=None):
         self.name = name
         self.conditions = conditions or []
         self.actions = actions or []
         self.rate_constant = rate_constant
         self.tof_count = tof_count or {}
         self.enabled = enabled
+        self.reverse_of = reverse_of  # name of the reverse process (for BEP)
+        self.site_type = site_type  # required site type (int) or None
         self.id = None  # assigned when added to Project
+
+
+class LateralInteraction:
+    """Pairwise lateral interaction between neighboring adsorbates.
+
+    Parameters
+    ----------
+    species1, species2 : str
+        Names of the two interacting species.
+    energy : float
+        Interaction energy in eV. Positive = repulsive.
+    """
+
+    def __init__(self, species1, species2, energy):
+        self.species1 = species1
+        self.species2 = species2
+        self.energy = energy
+
+    def __repr__(self):
+        return (f"LateralInteraction({self.species1}-{self.species2}, "
+                f"E={self.energy} eV)")
+
+
+class BEPRelation:
+    """Bronsted-Evans-Polanyi relation for a process.
+
+    Modifies activation energy based on reaction enthalpy change:
+        Ea(env) = Ea(0) + alpha * (DeltaH(env) - DeltaH(0))
+
+    Parameters
+    ----------
+    process_name : str
+        Name of the process this BEP applies to.
+    alpha : float
+        BEP slope (proximity factor), typically 0.0-1.0. Default 0.5.
+    """
+
+    def __init__(self, process_name, alpha=0.5):
+        self.process_name = process_name
+        self.alpha = alpha
+
+    def get_reverse(self):
+        """Return BEP relation for the reverse process."""
+        return BEPRelation(self.process_name + '_rev', alpha=1.0 - self.alpha)
+
+    def delta_Ea(self, delta_delta_H):
+        """Compute change in activation energy from change in reaction enthalpy."""
+        return self.alpha * delta_delta_H
+
+    def __repr__(self):
+        return f"BEPRelation({self.process_name}, alpha={self.alpha})"
 
 
 class Lattice:
@@ -139,6 +196,15 @@ class Project:
                        conditions=[Condition(coord, 'empty')],
                        actions=[Action(coord, 'CO')],
                        rate_constant='p_CO*bar*A/sqrt(2*pi*m_CO*umass/beta)')
+
+        # Lateral interactions
+        pt.add_lateral_interaction('CO', 'CO', energy=0.10)
+
+        # BEP relation
+        pt.add_bep_relation('CO_desorption', alpha=0.5)
+
+        # Diffusion
+        pt.add_diffusion('CO', rate_constant='1e8*exp(-0.5*eV*beta)')
     """
 
     def __init__(self):
@@ -155,6 +221,8 @@ class Project:
         self.process_list = []
         self.lattice = Lattice()
         self.filename = None
+        self.lateral_interactions = []
+        self.bep_relations = {}  # process_name -> BEPRelation
 
     def set_meta(self, **kwargs):
         self.meta.update(kwargs)
@@ -226,6 +294,129 @@ class Project:
         return self.add_process(name=name, conditions=conditions,
                                 actions=actions, rate_constant=rate_constant)
 
+    # ------------------------------------------------------------------
+    # Lateral interactions
+    # ------------------------------------------------------------------
+
+    def add_lateral_interaction(self, species1, species2, energy):
+        """
+        Add a pairwise lateral interaction between nearest-neighbor adsorbates.
+
+        Parameters
+        ----------
+        species1, species2 : str
+            Names of interacting species.
+        energy : float
+            Interaction energy in eV. Positive = repulsive, negative = attractive.
+        """
+        li = LateralInteraction(species1, species2, energy)
+        self.lateral_interactions.append(li)
+        return li
+
+    # ------------------------------------------------------------------
+    # BEP relations
+    # ------------------------------------------------------------------
+
+    def add_bep_relation(self, process_name, alpha=0.5):
+        """
+        Add a BEP relation for a process.
+
+        The activation energy is modified by:
+            Ea(env) = Ea(0) + alpha * (DeltaH(env) - DeltaH(0))
+
+        where DeltaH(env) includes lateral interaction contributions.
+
+        Parameters
+        ----------
+        process_name : str
+            Name of the process.
+        alpha : float
+            BEP slope (proximity factor). Default 0.5.
+        """
+        bep = BEPRelation(process_name, alpha=alpha)
+        self.bep_relations[process_name] = bep
+        return bep
+
+    # ------------------------------------------------------------------
+    # Diffusion helper
+    # ------------------------------------------------------------------
+
+    def add_diffusion(self, species, rate_constant, empty_species='empty',
+                      name_prefix=None, tof_count=None, site_type=None):
+        """
+        Add diffusion processes for a species in all nearest-neighbor directions.
+
+        Generates one process per NN direction:
+            species@center + empty@neighbor -> empty@center + species@neighbor
+
+        Parameters
+        ----------
+        species : str
+            The diffusing species name.
+        rate_constant : str or float
+            Rate constant expression for the hop.
+        empty_species : str
+            Name of the empty/vacant species. Default 'empty'.
+        name_prefix : str, optional
+            Prefix for process names. Default: '{species}_diff'.
+        tof_count : dict, optional
+            TOF counters for the diffusion process.
+        site_type : int, optional
+            Required site type.
+
+        Returns
+        -------
+        list of Process
+            The generated diffusion processes.
+        """
+        ndim = self.meta.get('model_dimension', 2)
+        prefix = name_prefix or f'{species}_diff'
+
+        if ndim == 1:
+            offsets = [(1, 0, 0), (-1, 0, 0)]
+            labels = ['right', 'left']
+        elif ndim == 2:
+            offsets = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0)]
+            labels = ['right', 'left', 'up', 'down']
+        else:
+            offsets = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0),
+                       (0, 0, 1), (0, 0, -1)]
+            labels = ['right', 'left', 'up', 'down', 'front', 'back']
+
+        site_name = 'default'
+        if self.lattice.layers:
+            layer = self.lattice.layers[0]
+            if layer.sites:
+                site_name = layer.sites[0].name
+
+        processes = []
+        for offset, label in zip(offsets, labels):
+            center = self.lattice.generate_coord(site_name)
+            neighbor = Coord(offset=offset, site=site_name,
+                             layer=center.layer)
+
+            proc = self.add_process(
+                name=f'{prefix}_{label}',
+                conditions=[
+                    Condition(center, species),
+                    Condition(neighbor, empty_species),
+                ],
+                actions=[
+                    Action(center, empty_species),
+                    Action(neighbor, species),
+                ],
+                rate_constant=rate_constant,
+                tof_count=tof_count or {},
+                site_type=site_type,
+            )
+            processes.append(proc)
+
+        return processes
+
+    # ------------------------------------------------------------------
+    # I/O
+    # ------------------------------------------------------------------
+
     def save(self, filename=None):
         """Save project to JSON file."""
         fn = filename or self.filename
@@ -242,6 +433,8 @@ class Project:
             'processes': [{'name': p.name,
                            'rate_constant': p.rate_constant,
                            'tof_count': p.tof_count,
+                           'reverse_of': p.reverse_of,
+                           'site_type': p.site_type,
                            'conditions': [
                                {'offset': c.coord.offset, 'species': c.species}
                                for c in p.conditions],
@@ -256,10 +449,18 @@ class Project:
                 'layers': [
                     {'name': l.name,
                      'sites': [{'name': s.name, 'pos': s.pos,
-                                'default_species': s.default_species}
+                                'default_species': s.default_species,
+                                'site_type': s.site_type}
                                for s in l.sites]}
                     for l in self.lattice.layers],
             },
+            'lateral_interactions': [
+                {'species1': li.species1, 'species2': li.species2,
+                 'energy': li.energy}
+                for li in self.lateral_interactions],
+            'bep_relations': [
+                {'process_name': b.process_name, 'alpha': b.alpha}
+                for b in self.bep_relations.values()],
         }
         with open(fn, 'w') as f:
             json.dump(data, f, indent=2)
@@ -279,5 +480,20 @@ class Project:
                 f"{c.species}@{c.coord.offset}" for c in p.conditions)
             acts = ', '.join(
                 f"{a.species}@{a.coord.offset}" for a in p.actions)
-            print(f"    {p.name}: [{conds}] -> [{acts}]")
+            extra = ''
+            if p.site_type is not None:
+                extra += f' [site_type={p.site_type}]'
+            if p.reverse_of:
+                extra += f' [reverse_of={p.reverse_of}]'
+            print(f"    {p.name}: [{conds}] -> [{acts}]{extra}")
             print(f"      rate = {p.rate_constant}")
+        if self.lateral_interactions:
+            print(f"  Lateral interactions ({len(self.lateral_interactions)}):")
+            for li in self.lateral_interactions:
+                sign = 'repulsive' if li.energy > 0 else 'attractive'
+                print(f"    {li.species1}-{li.species2}: "
+                      f"{li.energy:+.4f} eV ({sign})")
+        if self.bep_relations:
+            print(f"  BEP relations ({len(self.bep_relations)}):")
+            for name, bep in self.bep_relations.items():
+                print(f"    {name}: alpha={bep.alpha}")

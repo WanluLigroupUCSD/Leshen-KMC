@@ -188,6 +188,65 @@ def interpolated_tst_rate(U_data, Ea_data, kind='cubic'):
     return rate_func
 
 
+def bep_modified_rate(base_rate, delta_delta_H, alpha, T):
+    """
+    Compute BEP-modified rate constant.
+
+    Ea(env) = Ea(0) + alpha * delta_delta_H
+    k(env) = k_base * exp(-alpha * delta_delta_H * eV / (kB * T))
+
+    Parameters
+    ----------
+    base_rate : float
+        Rate constant at the reference state [s^-1].
+    delta_delta_H : float
+        Change in reaction enthalpy due to lateral interactions [eV].
+        delta_delta_H = E_lat_products - E_lat_reactants.
+    alpha : float
+        BEP slope (proximity factor), typically 0.0-1.0.
+    T : float
+        Temperature [K].
+
+    Returns
+    -------
+    float
+        Modified rate constant [s^-1].
+    """
+    if T <= 0 or base_rate <= 0:
+        return 0.0
+    delta_Ea = alpha * delta_delta_H
+    return base_rate * np.exp(-delta_Ea * eV / (kB * T))
+
+
+def lateral_modified_rate(base_rate, E_lateral, T):
+    """
+    Compute rate modified by lateral interaction energy.
+
+    For desorption/reaction from a site with adsorbate interactions:
+    k(env) = k_base * exp(+E_lateral * eV / (kB * T))
+
+    Positive E_lateral (repulsive) -> higher rate (destabilized adsorbate).
+    Negative E_lateral (attractive) -> lower rate (stabilized adsorbate).
+
+    Parameters
+    ----------
+    base_rate : float
+        Rate constant without lateral interactions [s^-1].
+    E_lateral : float
+        Sum of pairwise interaction energies [eV].
+    T : float
+        Temperature [K].
+
+    Returns
+    -------
+    float
+        Modified rate constant [s^-1].
+    """
+    if T <= 0 or base_rate <= 0:
+        return 0.0
+    return base_rate * np.exp(E_lateral * eV / (kB * T))
+
+
 def electrochemical_rate(Ea, T, U, U0=0.0, beta_bv=0.5):
     """
     Electrochemical (Butler-Volmer) rate for proton-coupled electron transfer.

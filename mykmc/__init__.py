@@ -4,12 +4,24 @@ mykmc - Kinetic Monte Carlo and Microkinetic Modeling Package
 A pure Python implementation of lattice KMC (BKL/rejection-free algorithm)
 and mean-field microkinetic ODE solver for heterogeneous catalysis.
 
+Features:
+  - BKL/VSSM rejection-free KMC algorithm
+  - Neighbor list with spatial event matching
+  - Pairwise lateral interactions (coverage-dependent rates)
+  - BEP (Bronsted-Evans-Polanyi) relations
+  - Surface diffusion helper
+  - Site type support (top, bridge, hollow, etc.)
+  - Butler-Volmer electrochemical rates
+  - Mean-field microkinetic ODE solver
+  - Polarization curve computation
+
 API style follows kmos conventions.
 """
 
 from .types import (
     Project, Species, Site, Layer, Coord,
     Condition, Action, Parameter, Process,
+    LateralInteraction, BEPRelation,
 )
 from .engine import KMCEngine
 from .microkinetic import MicroKineticModel
@@ -19,14 +31,21 @@ from .polarization import (
     PolarizationCurve, compute_polarization_curve,
     tof_to_current_density, load_energy_data,
 )
+from .rates import (
+    bep_modified_rate, lateral_modified_rate,
+    arrhenius, tst_rate, hertz_knudsen, electrochemical_rate,
+)
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'
 __all__ = [
     'Project', 'Species', 'Site', 'Layer', 'Coord',
     'Condition', 'Action', 'Parameter', 'Process',
+    'LateralInteraction', 'BEPRelation',
     'KMCEngine', 'MicroKineticModel',
     'TrajectoryRecorder', 'run_to_steady_state',
     'InterpolatedBarrier', 'EnergyLandscape',
     'PolarizationCurve', 'compute_polarization_curve',
     'tof_to_current_density', 'load_energy_data',
+    'bep_modified_rate', 'lateral_modified_rate',
+    'arrhenius', 'tst_rate', 'hertz_knudsen', 'electrochemical_rate',
 ]

@@ -307,6 +307,20 @@ pub fn hertz_knudsen(p_pa: f64, t: f64, m_kg: f64, a_site_m2: f64) -> f64 {
     p_pa * a_site_m2 / (2.0 * PI * m_kg * KB * t).sqrt()
 }
 
+/// BEP-modified rate: k = k_base * exp(-alpha * delta_delta_H * eV / (kB*T))
+pub fn bep_modified_rate(base_rate: f64, delta_delta_h: f64, alpha: f64, t: f64) -> f64 {
+    if t <= 0.0 || base_rate <= 0.0 { return 0.0; }
+    let delta_ea = alpha * delta_delta_h;
+    base_rate * (-delta_ea * EV / (KB * t)).exp()
+}
+
+/// Lateral-modified rate: k = k_base * exp(+E_lateral * eV / (kB*T))
+/// Positive E_lateral (repulsive) -> higher rate (destabilized adsorbate).
+pub fn lateral_modified_rate(base_rate: f64, e_lateral: f64, t: f64) -> f64 {
+    if t <= 0.0 || base_rate <= 0.0 { return 0.0; }
+    base_rate * (e_lateral * EV / (KB * t)).exp()
+}
+
 /// Electrochemical Butler-Volmer PCET rate:
 /// k = (kB*T/h) * exp(-(Ea + beta_bv * (U - U0)) * eV / (kB*T))
 pub fn electrochemical_rate(ea_ev: f64, t: f64, u: f64, u0: f64, beta_bv: f64) -> f64 {
