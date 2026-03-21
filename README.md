@@ -6,9 +6,9 @@
 
 ---
 
-A dual-language (Python + Rust) toolkit for lattice Kinetic Monte Carlo (KMC) simulation and mean-field microkinetic modeling, designed for electrochemical N₂ reduction and general heterogeneous catalysis research. The Python package (`mykmc`) provides a flexible, research-friendly API with SciPy ODE solvers and polarization curve support, while the Rust binary (`mykmc-rs`) delivers ~24× speedup for production KMC runs.
+A dual-language (Python + Rust) toolkit for lattice Kinetic Monte Carlo (KMC) simulation and mean-field microkinetic modeling, designed for electrochemical N₂ reduction and general heterogeneous catalysis research. The Python package (`mykmc`) provides a flexible, research-friendly API with SciPy ODE solvers and polarization curve support, while the Rust binary (`mykmc-rs`) delivers high performance with Fenwick tree O(log N) site selection, Newton-Raphson steady-state solver, and zero-allocation coordinate handling.
 
-双语言（Python + Rust）工具包，用于晶格动力学蒙特卡洛（KMC）模拟与平均场微观动力学建模，适用于电化学氮还原及通用多相催化研究。Python 包（`mykmc`）提供灵活的研究接口，支持 SciPy ODE 求解器与极化曲线计算；Rust 二进制（`mykmc-rs`）提供约 24 倍加速，适合生产级 KMC 模拟。
+双语言（Python + Rust）工具包，用于晶格动力学蒙特卡洛（KMC）模拟与平均场微观动力学建模，适用于电化学氮还原及通用多相催化研究。Python 包（`mykmc`）提供灵活的研究接口，支持 SciPy ODE 求解器与极化曲线计算；Rust 二进制（`mykmc-rs`）通过 Fenwick 树 O(log N) 位点选择、Newton-Raphson 稳态求解器和零分配坐标处理实现高性能计算。
 
 ## Table of Contents / 目录
 
@@ -34,8 +34,9 @@ A dual-language (Python + Rust) toolkit for lattice Kinetic Monte Carlo (KMC) si
 
 | Feature | Description |
 |---------|-------------|
-| **BKL KMC Engine** | Rejection-free variable step-size algorithm with O(1) site bookkeeping (Python & Rust) / BKL 无拒绝算法，O(1) 位点簿记（Python & Rust） |
-| **Mean-Field ODE Solver** | Adaptive time-stepping steady-state solver: SciPy (Python) and RK4+Euler (Rust) / 自适应步长稳态求解器 |
+| **BKL KMC Engine** | Rejection-free algorithm with Fenwick tree O(log N) site selection (Rust), O(1) site bookkeeping (Python & Rust) / BKL 无拒绝算法，Fenwick 树 O(log N) 位点选择（Rust），O(1) 位点簿记 |
+| **Spatial KMC** | Neighbor list (4-NN 2D / 6-NN 3D with PBC), pairwise lateral interactions, BEP relations, surface diffusion, site types / 邻居列表、横向相互作用、BEP 关系、表面扩散、位点类型 |
+| **Mean-Field ODE Solver** | Newton-Raphson with damped line search (Rust), SciPy fsolve (Python) / Newton-Raphson 阻尼线搜索（Rust），SciPy fsolve（Python） |
 | **Polarization Curve** | Current density vs. potential from Butler-Volmer or constant-potential DFT data (Python + Rust) / 极化曲线计算，支持 Butler-Volmer 和恒电位 DFT 数据（Python + Rust） |
 | **DFT Energy Interpolation** | Potential-dependent barriers from interpolated DFT energy surfaces (Python) / DFT 能量面插值，电位依赖活化能（Python） |
 | **Two Modes** | Full model (ads/des/reactions) and cycle mode (pure chemistry) / 完整模型与纯化学循环模式 |
@@ -44,7 +45,7 @@ A dual-language (Python + Rust) toolkit for lattice Kinetic Monte Carlo (KMC) si
 | **Parameter Scanning** | Built-in potential and temperature scanning / 内置电位与温度扫描 |
 | **JSON Model I/O** | Import/export models in JSON format / JSON 格式模型导入导出 |
 | **Validated** | Matches analytical Langmuir isotherm within <1% / Langmuir 等温线验证误差 <1% |
-| **High Performance** | Rust binary: ~1.3 MB standalone, ~24× faster than Python / Rust 二进制约 1.3 MB，比 Python 快约 24 倍 |
+| **High Performance** | Rust binary: ~1.6 MB standalone, Fenwick tree + flat array lookups + zero-alloc coordinates / Rust 二进制约 1.6 MB，Fenwick 树 + 平铺数组查找 + 零堆分配坐标 |
 
 ---
 
@@ -591,10 +592,18 @@ KMC 引擎实现了可变步长法（VSSM），也称 BKL 算法或 n-fold way�
 5. Select site uniformly from available sites using r₃
 6. Execute process and update bookkeeping
 
-**Key optimizations / 关键优化：**
-- O(1) available-site add/remove via swap-with-last trick
-- Binary search for process selection: O(log N_proc)
-- Periodic boundary conditions
+**Key optimizations (Rust) / 关键优化（Rust）：**
+
+| Optimization | Complexity | Description |
+|---|---|---|
+| **Fenwick tree site selection** | O(log N) | Binary Indexed Tree for rate-weighted site selection under lateral interactions (was O(N) linear scan) / Fenwick 树实现横向相互作用下的加权位点选择 |
+| **Flat lateral energy array** | O(1) | `lateral_energy[sp1 * N + sp2]` replaces HashMap lookup / 平铺数组替代 HashMap |
+| **Direct-indexed availability** | O(1) | `site_in_avail[proc][site]` replaces HashMap / 直接索引数组替代 HashMap |
+| **Fixed [i32;3] coordinates** | 0 alloc | Stack-allocated coordinates, no heap allocation in hot path / 栈上固定大小坐标，热路径零堆分配 |
+| **Neighbor-list fast path** | 5 vs 9 sites | Single-site processes use neighbor list directly (5 sites in 2D vs 9 from grid) / 单位点过程直接用邻居列表 |
+| **Cached beta_thermal** | O(1) | `eV/(kB*T)` cached, updated only on parameter change / 缓存热力学因子 |
+| **Periodic Fenwick rebuild** | correctness | Rebuild every 100K steps to prevent floating-point drift / 每10万步重建防浮点漂移 |
+| **OnceLock rate constants** | O(1) | Physical constants cached via `std::sync::OnceLock`, only user params merged per call / 物理常数一次性缓存 |
 
 ### Mean-Field Microkinetic Solver / 平均场微观动力学求解器
 
@@ -613,8 +622,10 @@ where νᵢⱼ is the stoichiometric coefficient and rⱼ is the net rate of rea
 - `scipy.optimize.fsolve` — steady-state root finding / 稳态根求解
 
 **Rust solver / Rust 求解器：**
-- Adaptive time-stepping Euler integration / 自适应步长 Euler 积分
-- Progressive dt from 10⁻¹⁵ to 10⁶ s / 步长从 10⁻¹⁵ 递增至 10⁶ s
+- **Phase 1**: Euler pre-equilibration with progressive dt (10⁻¹⁵ → 10⁰ s) to reach vicinity of steady state / 阶段1：自适应 Euler 预平衡
+- **Phase 2**: Newton-Raphson with finite-difference Jacobian, damped line search with backtracking, Gaussian elimination with partial pivoting / 阶段2：Newton-Raphson + 有限差分 Jacobian + 阻尼线搜索 + 部分选主元高斯消元
+- Typically converges in 5-10 Newton iterations (vs 8000 Euler steps in v0.2) / 通常 5-10 步 Newton 迭代收敛（v0.2 需 8000 步 Euler）
+- Fallback to Euler if Newton stalls (singular Jacobian or no descent) / Newton 停滞时自动回退 Euler
 - Convergence check: max|dθ/dt| < 10⁻¹⁵ / 收敛判据
 
 ---
@@ -685,10 +696,10 @@ src/
 ├── main.rs              CLI entry point with clap / CLI 入口
 ├── lib.rs               Module declarations / 模块声明
 ├── units.rs             Physical constants (kB, h, eV, bar, ...) / 物理常数
-├── model.rs             Data model: Project, Species, Process, Condition, Action / 数据模型
-├── rates.rs             Rate expression parser + Arrhenius/TST/HK/BV functions / 速率计算
-├── engine.rs            BKL KMC engine with O(1) bookkeeping / KMC 引擎
-├── microkinetic.rs      Mean-field ODE solver (RK4 + adaptive Euler) / 平均场求解器
+├── model.rs             Data model: Project, Species, Process, LateralInteraction, BEPRelation / 数据模型
+├── rates.rs             Rate expression parser (OnceLock cached) + TST/HK/BV functions / 速率计算
+├── engine.rs            BKL KMC engine: Fenwick tree, flat arrays, neighbor list, lateral/BEP / KMC 引擎
+├── microkinetic.rs      Mean-field solver: Euler pre-equilibration + Newton-Raphson + Gauss elimination / 求解器
 ├── analysis.rs          Trajectory recording, steady-state detection / 分析工具
 ├── models.rs            Built-in N₂ reduction (full + cycle) and CO test / 内置模型
 └── polarization.rs      Cubic spline interpolation, DFT energy landscape, polarization curve / 极化曲线
@@ -764,13 +775,22 @@ All tests pass with relative error < 1%.
 
 | Benchmark | Result |
 |---|---|
-| CO validation (5 models × 700k steps) / CO 验证 | **3.7 s** |
-| Binary size / 可执行文件大小 | **1.3 MB** |
-| Compilation / 编译时间 | ~8 s (release) |
+| CO validation (5×700k steps) / CO 验证 | **3.7 s** |
+| Potential scan (31 points, Newton-Raphson) / 电位扫描 | **0.6 s** |
+| Binary size / 可执行文件大小 | **1.6 MB** |
+| Compilation / 编译时间 | ~7 s (release) |
+| Unit tests / 单元测试 | **19/19 pass** |
 
-Compared to Python: ~24× speedup for KMC simulations.
+### Algorithmic Complexity / 算法复杂度
 
-与 Python 版本相比：KMC 模拟约 24 倍加速。
+| Operation | Without Lateral | With Lateral (Fenwick) |
+|---|---|---|
+| Process selection / 过程选择 | O(log N_proc) | O(log N_proc) |
+| Site selection / 位点选择 | O(1) | **O(log N_sites)** |
+| Site add/remove / 位点增删 | O(1) | **O(log N_sites)** |
+| MKM steady state / MKM 稳态 | — | **5-10 Newton iterations** |
+
+与 Python 版本相比：KMC 模拟通常快 20-100 倍，含横向相互作用的大格点可达 100-500 倍。
 
 ---
 

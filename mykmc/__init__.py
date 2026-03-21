@@ -19,7 +19,7 @@ API style follows kmos conventions.
 """
 
 from .types import (
-    Project, Species, Site, Layer, Coord,
+    Project, Species, Site, Layer, Lattice, Coord,
     Condition, Action, Parameter, Process,
     LateralInteraction, BEPRelation,
 )
@@ -38,7 +38,7 @@ from .rates import (
 
 __version__ = '0.3.0'
 __all__ = [
-    'Project', 'Species', 'Site', 'Layer', 'Coord',
+    'Project', 'Species', 'Site', 'Layer', 'Lattice', 'Coord',
     'Condition', 'Action', 'Parameter', 'Process',
     'LateralInteraction', 'BEPRelation',
     'KMCEngine', 'MicroKineticModel',
