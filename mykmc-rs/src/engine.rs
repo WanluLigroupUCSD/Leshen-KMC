@@ -1,14 +1,19 @@
-/// Core KMC engine: BKL rejection-free algorithm.
+/// Core KMC engine: BKL rejection-free algorithm with optimized data structures.
 ///
-/// Features:
+/// Algorithmic features:
 ///   - BKL/VSSM rejection-free algorithm
+///   - Fenwick tree (BIT) for O(log N) rate-weighted site selection
 ///   - Neighbor list for spatial events (4-NN 2D, 6-NN 3D)
 ///   - Pairwise lateral interactions with per-site rates
-///   - Surface diffusion support
 ///   - BEP (Bronsted-Evans-Polanyi) relations
-///   - Site type support
+///   - Surface diffusion and site type support
 ///
-/// Uses O(1) available-sites bookkeeping via swap-with-last.
+/// Performance vs naive implementation:
+///   - O(log N) site selection via Fenwick tree (was O(N) linear scan)
+///   - Flat array lateral energy lookup (was HashMap)
+///   - Direct-indexed availability arrays (was HashMap)
+///   - Fixed [i32;3] coordinates (zero heap allocation in hot path)
+///   - Neighbor-list-based affected-site detection (fast path)
 
 use std::collections::HashMap;
 use rand::Rng;
@@ -17,149 +22,226 @@ use crate::model::Project;
 use crate::rates::evaluate_rate_expression;
 use crate::units::{KB, EV};
 
-/// Compiled process data for fast lookup (no String comparisons in hot path).
+// ═══════════════════════════════════════════════════════════════════════
+//  Fenwick Tree (Binary Indexed Tree)
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Fenwick tree supporting O(log N) point-update, prefix-sum, and
+/// rate-weighted random selection.  Used for efficient site selection
+/// when lateral interactions make per-site rates heterogeneous.
+struct FenwickTree {
+    n: usize,
+    tree: Vec<f64>,
+    running_total: f64,
+}
+
+impl FenwickTree {
+    fn new(n: usize) -> Self {
+        Self { n, tree: vec![0.0; n + 1], running_total: 0.0 }
+    }
+
+    /// Add `delta` to position `i` (0-indexed). O(log N).
+    #[inline]
+    fn update(&mut self, i: usize, delta: f64) {
+        self.running_total += delta;
+        let mut j = i + 1;
+        while j <= self.n {
+            self.tree[j] += delta;
+            j += j & j.wrapping_neg();
+        }
+    }
+
+    /// Total sum of all elements. O(1).
+    #[inline]
+    fn total(&self) -> f64 {
+        self.running_total
+    }
+
+    /// Find smallest 0-indexed position whose prefix sum >= target.
+    /// O(log N) via binary lifting.
+    #[inline]
+    fn find(&self, mut target: f64) -> usize {
+        let mut pos = 0usize;
+        let mut bit = 1usize;
+        while bit * 2 <= self.n { bit <<= 1; }
+        while bit > 0 {
+            let next = pos + bit;
+            if next <= self.n && self.tree[next] < target {
+                target -= self.tree[next];
+                pos = next;
+            }
+            bit >>= 1;
+        }
+        pos.min(self.n.saturating_sub(1))
+    }
+
+    fn clear(&mut self) {
+        self.tree.fill(0.0);
+        self.running_total = 0.0;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Compiled Process
+// ═══════════════════════════════════════════════════════════════════════
+
 struct CompiledProcess {
-    conditions: Vec<(Vec<i32>, usize)>,
-    actions: Vec<(Vec<i32>, usize)>,
+    conditions: Vec<([i32; 3], usize)>,
+    actions: Vec<([i32; 3], usize)>,
     tof_count: HashMap<String, f64>,
     site_type: Option<i32>,
 }
+
+/// Convert a variable-length offset Vec to fixed [i32; 3].
+#[inline(always)]
+fn to_offset3(v: &[i32]) -> [i32; 3] {
+    match v.len() {
+        0 => [0, 0, 0],
+        1 => [v[0], 0, 0],
+        2 => [v[0], v[1], 0],
+        _ => [v[0], v[1], v[2]],
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  KMC Engine
+// ═══════════════════════════════════════════════════════════════════════
 
 pub struct KMCEngine {
     // Model
     project: Project,
     ndim: usize,
-    lattice_size: Vec<usize>,
+    lattice_size: [usize; 3],
     nsites: usize,
     nspecies: usize,
     nproc: usize,
 
-    // State
+    // Lattice state
     lattice: Vec<u16>,
     site_types: Vec<i32>,
     pub kmc_time: f64,
     pub kmc_step: u64,
     pub procstat: Vec<u64>,
-
-    // For TOF calculation
     prev_procstat: Vec<u64>,
     prev_time: f64,
 
-    // Rate constants (base rates, before lateral correction)
+    // Base rate constants
     pub rates: Vec<f64>,
     accum_rates: Vec<f64>,
 
-    // Available sites bookkeeping (per process)
+    // ── No-lateral: swap-with-last bookkeeping ──
     avail_sites: Vec<Vec<usize>>,
-    site_in_avail: Vec<HashMap<usize, usize>>,
-    /// Parallel rate array: avail_rates[p][i] = rate for avail_sites[p][i]
-    avail_rates: Vec<Vec<f64>>,
-    /// Sum of per-site rates per process (only used with lateral)
-    proc_total_rates: Vec<f64>,
+    // Direct-indexed: site_in_avail[proc][site] = index in avail_sites, or -1
+    site_in_avail: Vec<Vec<i32>>,
+
+    // ── Lateral: Fenwick tree bookkeeping ──
+    rate_trees: Vec<FenwickTree>,
+    site_rates: Vec<Vec<f64>>,  // [nproc][nsites], 0.0 = not available
 
     // Neighbor list
     neighbors: Vec<Vec<usize>>,
 
-    // Lateral interactions: (species_a, species_b) -> energy [eV]
-    lateral_dict: HashMap<(usize, usize), f64>,
+    // Flat lateral energy: lateral_energy[sp1 * nspecies + sp2]
+    lateral_energy: Vec<f64>,
     has_lateral: bool,
 
-    // BEP: proc_id -> alpha
-    bep_proc: HashMap<usize, f64>,
+    // BEP alpha per process (NAN = no BEP for this process)
+    bep_alpha: Vec<f64>,
 
-    // Empty species id
+    // Cached thermal factor: eV / (kB * T).  Updated on set_parameter("T", ..).
+    cached_beta_th: f64,
+
+    // Periodic Fenwick tree rebuild counter (prevents floating-point drift)
+    steps_since_rebuild: u64,
+
     empty_species: usize,
-
-    // Compiled processes
     compiled: Vec<CompiledProcess>,
     max_offset: usize,
 
-    // RNG
     rng: rand::rngs::ThreadRng,
 }
 
 impl KMCEngine {
     pub fn new(mut project: Project, size: &[usize]) -> Self {
         let ndim = project.model_dimension;
-        let lattice_size: Vec<usize> = size[..ndim].to_vec();
-        let nsites: usize = lattice_size.iter().product();
+        let mut lattice_size = [1usize; 3];
+        for i in 0..ndim { lattice_size[i] = size[i]; }
+        let nsites: usize = lattice_size[..ndim].iter().product();
         let nspecies = project.species_list.len();
         let nproc = project.process_list.len();
 
         project.rebuild_maps();
 
-        // Detect empty species
         let empty_species = project.species_list.iter()
             .find(|s| matches!(s.name.to_lowercase().as_str(), "empty" | "vacant" | "*"))
             .map(|s| s.id)
             .unwrap_or(0);
 
-        // Build lateral interaction dict
-        let mut lateral_dict: HashMap<(usize, usize), f64> = HashMap::new();
+        // ── Flat lateral energy array ──
+        let mut lateral_energy = vec![0.0f64; nspecies * nspecies];
         for li in &project.lateral_interactions {
             if let (Some(&sp1), Some(&sp2)) = (
                 project.species_map.get(&li.species1),
                 project.species_map.get(&li.species2),
             ) {
-                lateral_dict.insert((sp1, sp2), li.energy);
-                lateral_dict.insert((sp2, sp1), li.energy);
+                lateral_energy[sp1 * nspecies + sp2] = li.energy;
+                lateral_energy[sp2 * nspecies + sp1] = li.energy;
             }
         }
-        let has_lateral = !lateral_dict.is_empty();
+        let has_lateral = !project.lateral_interactions.is_empty();
 
-        // Build BEP lookup: proc_id -> alpha
+        // ── BEP alpha array ──
         let bep_by_name: HashMap<String, f64> = project.bep_relations.iter()
             .map(|b| (b.process_name.clone(), b.alpha))
             .collect();
+        let mut bep_alpha = vec![f64::NAN; nproc];
+        for (pid, proc) in project.process_list.iter().enumerate() {
+            if let Some(&alpha) = bep_by_name.get(&proc.name) {
+                bep_alpha[pid] = alpha;
+            }
+        }
 
-        // Compile processes to numeric form
+        // ── Compile processes to fixed-size offsets ──
         let compiled: Vec<CompiledProcess> = project.process_list.iter().map(|proc| {
-            let conditions = proc.conditions.iter().map(|c| {
-                let sp_id = project.species_map[&c.species];
-                (c.offset.clone(), sp_id)
-            }).collect();
-            let actions = proc.actions.iter().map(|a| {
-                let sp_id = project.species_map[&a.species];
-                (a.offset.clone(), sp_id)
-            }).collect();
             CompiledProcess {
-                conditions,
-                actions,
+                conditions: proc.conditions.iter().map(|c| {
+                    (to_offset3(&c.offset), project.species_map[&c.species])
+                }).collect(),
+                actions: proc.actions.iter().map(|a| {
+                    (to_offset3(&a.offset), project.species_map[&a.species])
+                }).collect(),
                 tof_count: proc.tof_count.clone(),
                 site_type: proc.site_type,
             }
         }).collect();
 
-        // Resolve BEP proc IDs
-        let mut bep_proc: HashMap<usize, f64> = HashMap::new();
-        for (pid, proc) in project.process_list.iter().enumerate() {
-            if let Some(&alpha) = bep_by_name.get(&proc.name) {
-                bep_proc.insert(pid, alpha);
-            }
-        }
-
-        // Compute max offset range
+        // ── Max offset ──
         let mut max_off: usize = 1;
         for cp in &compiled {
             for (off, _) in cp.conditions.iter().chain(cp.actions.iter()) {
-                for &o in off {
-                    max_off = max_off.max(o.unsigned_abs() as usize + 1);
+                for d in 0..ndim {
+                    max_off = max_off.max(off[d].unsigned_abs() as usize + 1);
                 }
             }
         }
 
-        // Initialize lattice
-        let lattice = vec![0u16; nsites];
-        let site_types = vec![0i32; nsites];
-
-        // Build neighbor list
+        // ── Neighbor list ──
         let neighbors = build_neighbor_list(ndim, &lattice_size, nsites);
 
-        // Initialize bookkeeping
+        // ── Bookkeeping arrays ──
+        let site_in_avail = vec![vec![-1i32; nsites]; nproc];
         let avail_sites = vec![Vec::new(); nproc];
-        let site_in_avail = vec![HashMap::new(); nproc];
-        let avail_rates = vec![Vec::new(); nproc];
-        let proc_total_rates = vec![0.0; nproc];
+
+        let rate_trees = if has_lateral {
+            (0..nproc).map(|_| FenwickTree::new(nsites)).collect()
+        } else {
+            Vec::new()
+        };
+        let site_rates = if has_lateral {
+            vec![vec![0.0f64; nsites]; nproc]
+        } else {
+            Vec::new()
+        };
 
         let mut engine = Self {
             project,
@@ -168,8 +250,8 @@ impl KMCEngine {
             nsites,
             nspecies,
             nproc,
-            lattice,
-            site_types,
+            lattice: vec![0u16; nsites],
+            site_types: vec![0i32; nsites],
             kmc_time: 0.0,
             kmc_step: 0,
             procstat: vec![0u64; nproc],
@@ -179,64 +261,62 @@ impl KMCEngine {
             accum_rates: vec![0.0; nproc],
             avail_sites,
             site_in_avail,
-            avail_rates,
-            proc_total_rates,
+            rate_trees,
+            site_rates,
             neighbors,
-            lateral_dict,
+            lateral_energy,
             has_lateral,
-            bep_proc,
+            bep_alpha,
+            cached_beta_th: 0.0,
+            steps_since_rebuild: 0,
             empty_species,
             compiled,
             max_offset: max_off,
             rng: rand::thread_rng(),
         };
 
+        engine.update_cached_beta();
         engine.update_rate_constants();
-        engine.rebuild_avail_sites();
-
-        if has_lateral {
-            engine.rebuild_per_site_rates();
-        }
-
+        engine.rebuild_avail();
         engine
     }
 
-    // ── Coordinate conversion (with PBC) ──────────────────────────────
+    // ── Coordinate conversion (zero heap allocation) ────────────────
 
-    #[inline]
-    fn site_to_coord(&self, site: usize) -> Vec<i32> {
+    #[inline(always)]
+    fn site_to_coord(&self, site: usize) -> [i32; 3] {
         match self.ndim {
-            1 => vec![site as i32],
-            2 => vec![
+            1 => [site as i32, 0, 0],
+            2 => [
                 (site / self.lattice_size[1]) as i32,
                 (site % self.lattice_size[1]) as i32,
+                0,
             ],
             3 => {
-                let ly = self.lattice_size[1];
-                let lz = self.lattice_size[2];
-                vec![
-                    (site / (ly * lz)) as i32,
-                    ((site % (ly * lz)) / lz) as i32,
-                    (site % lz) as i32,
+                let lylz = self.lattice_size[1] * self.lattice_size[2];
+                [
+                    (site / lylz) as i32,
+                    ((site % lylz) / self.lattice_size[2]) as i32,
+                    (site % self.lattice_size[2]) as i32,
                 ]
             }
             _ => unreachable!(),
         }
     }
 
-    #[inline]
-    fn coord_to_site(&self, coord: &[i32]) -> usize {
+    #[inline(always)]
+    fn coord_to_site(&self, c: [i32; 3]) -> usize {
         match self.ndim {
-            1 => coord[0].rem_euclid(self.lattice_size[0] as i32) as usize,
+            1 => c[0].rem_euclid(self.lattice_size[0] as i32) as usize,
             2 => {
-                let x = coord[0].rem_euclid(self.lattice_size[0] as i32) as usize;
-                let y = coord[1].rem_euclid(self.lattice_size[1] as i32) as usize;
+                let x = c[0].rem_euclid(self.lattice_size[0] as i32) as usize;
+                let y = c[1].rem_euclid(self.lattice_size[1] as i32) as usize;
                 x * self.lattice_size[1] + y
             }
             3 => {
-                let x = coord[0].rem_euclid(self.lattice_size[0] as i32) as usize;
-                let y = coord[1].rem_euclid(self.lattice_size[1] as i32) as usize;
-                let z = coord[2].rem_euclid(self.lattice_size[2] as i32) as usize;
+                let x = c[0].rem_euclid(self.lattice_size[0] as i32) as usize;
+                let y = c[1].rem_euclid(self.lattice_size[1] as i32) as usize;
+                let z = c[2].rem_euclid(self.lattice_size[2] as i32) as usize;
                 x * self.lattice_size[1] * self.lattice_size[2]
                     + y * self.lattice_size[2] + z
             }
@@ -244,69 +324,81 @@ impl KMCEngine {
         }
     }
 
-    // ── Available sites bookkeeping ───────────────────────────────────
+    /// Apply offset to coordinate and convert back to site index.
+    #[inline(always)]
+    fn offset_site(&self, coord: [i32; 3], offset: [i32; 3]) -> usize {
+        self.coord_to_site([
+            coord[0] + offset[0],
+            coord[1] + offset[1],
+            coord[2] + offset[2],
+        ])
+    }
+
+    // ── Process availability check ──────────────────────────────────
 
     #[inline]
     fn check_process_at_site(&self, proc_id: usize, site: usize) -> bool {
         let cp = &self.compiled[proc_id];
-
-        // Check site type requirement
         if let Some(req) = cp.site_type {
             if self.site_types[site] != req {
                 return false;
             }
         }
-
-        // Check species conditions
         let coord = self.site_to_coord(site);
-        for (offset, sp_id) in &cp.conditions {
-            let nc: Vec<i32> = coord.iter().zip(offset.iter())
-                .map(|(&c, &o)| c + o).collect();
-            if self.lattice[self.coord_to_site(&nc)] as usize != *sp_id {
+        for &(offset, sp_id) in &cp.conditions {
+            if self.lattice[self.offset_site(coord, offset)] as usize != sp_id {
                 return false;
             }
         }
         true
     }
 
-    fn add_to_avail(&mut self, proc_id: usize, site: usize) {
-        if !self.site_in_avail[proc_id].contains_key(&site) {
-            let idx = self.avail_sites[proc_id].len();
-            self.site_in_avail[proc_id].insert(site, idx);
-            self.avail_sites[proc_id].push(site);
+    // ── Available sites bookkeeping ─────────────────────────────────
 
-            if self.has_lateral {
-                let rate = self.compute_site_rate(proc_id, site);
-                self.avail_rates[proc_id].push(rate);
-                self.proc_total_rates[proc_id] += rate;
-            } else {
-                self.avail_rates[proc_id].push(0.0);
-            }
+    fn add_to_avail(&mut self, p: usize, site: usize) {
+        if self.site_in_avail[p][site] >= 0 { return; }
+
+        if self.has_lateral {
+            let rate = self.compute_site_rate(p, site);
+            self.site_rates[p][site] = rate;
+            self.rate_trees[p].update(site, rate);
+            self.site_in_avail[p][site] = 0;  // flag: available
+        } else {
+            let idx = self.avail_sites[p].len();
+            self.site_in_avail[p][site] = idx as i32;
+            self.avail_sites[p].push(site);
         }
     }
 
-    fn remove_from_avail(&mut self, proc_id: usize, site: usize) {
-        if let Some(idx) = self.site_in_avail[proc_id].remove(&site) {
-            if self.has_lateral {
-                self.proc_total_rates[proc_id] -= self.avail_rates[proc_id][idx];
-            }
+    fn remove_from_avail(&mut self, p: usize, site: usize) {
+        if self.site_in_avail[p][site] < 0 { return; }
 
-            let last = *self.avail_sites[proc_id].last().unwrap();
-            self.avail_sites[proc_id][idx] = last;
-            self.avail_rates[proc_id][idx] = *self.avail_rates[proc_id].last().unwrap();
-            if last != site {
-                self.site_in_avail[proc_id].insert(last, idx);
+        if self.has_lateral {
+            let old_rate = self.site_rates[p][site];
+            self.site_rates[p][site] = 0.0;
+            self.rate_trees[p].update(site, -old_rate);
+        } else {
+            let idx = self.site_in_avail[p][site] as usize;
+            let last_site = *self.avail_sites[p].last().unwrap();
+            self.avail_sites[p][idx] = last_site;
+            if last_site != site {
+                self.site_in_avail[p][last_site] = idx as i32;
             }
-            self.avail_sites[proc_id].pop();
-            self.avail_rates[proc_id].pop();
+            self.avail_sites[p].pop();
         }
+        self.site_in_avail[p][site] = -1;
     }
 
-    fn rebuild_avail_sites(&mut self) {
+    fn rebuild_avail(&mut self) {
         for p in 0..self.nproc {
             self.avail_sites[p].clear();
-            self.site_in_avail[p].clear();
-            self.avail_rates[p].clear();
+            self.site_in_avail[p].fill(-1);
+        }
+        if self.has_lateral {
+            for p in 0..self.nproc {
+                self.site_rates[p].fill(0.0);
+                self.rate_trees[p].clear();
+            }
         }
         for s in 0..self.nsites {
             for p in 0..self.nproc {
@@ -317,37 +409,46 @@ impl KMCEngine {
         }
     }
 
-    fn rebuild_per_site_rates(&mut self) {
-        for p in 0..self.nproc {
-            let mut total = 0.0;
-            for i in 0..self.avail_sites[p].len() {
-                let site = self.avail_sites[p][i];
-                let rate = self.compute_site_rate(p, site);
-                self.avail_rates[p][i] = rate;
-                total += rate;
-            }
-            self.proc_total_rates[p] = total;
-        }
-    }
+    // ── Affected sites (with neighbor-based fast path) ──────────────
 
     fn get_affected_sites(&self, site: usize, proc_id: usize) -> Vec<usize> {
-        let coord = self.site_to_coord(site);
         let cp = &self.compiled[proc_id];
+
+        // Fast path: single-site process, max_offset <= 1
+        // Use neighbor list directly instead of coordinate grid
+        if cp.actions.len() == 1 && self.max_offset <= 1 {
+            let action_site = if cp.actions[0].0 == [0, 0, 0] {
+                site
+            } else {
+                let coord = self.site_to_coord(site);
+                self.offset_site(coord, cp.actions[0].0)
+            };
+            let nbs = &self.neighbors[action_site];
+            let mut affected = Vec::with_capacity(1 + nbs.len());
+            affected.push(action_site);
+            affected.extend_from_slice(nbs);
+            return affected;
+        }
+
+        // General path: coordinate grid around all changed sites
+        let coord = self.site_to_coord(site);
         let r = self.max_offset as i32;
         let mut affected = Vec::new();
 
-        let mut changed: Vec<Vec<i32>> = Vec::new();
-        for (offset, _) in &cp.actions {
-            let nc: Vec<i32> = coord.iter().zip(offset.iter())
-                .map(|(&c, &o)| c + o).collect();
-            changed.push(nc);
+        let mut changed: Vec<[i32; 3]> = Vec::new();
+        for &(offset, _) in &cp.actions {
+            changed.push([
+                coord[0] + offset[0],
+                coord[1] + offset[1],
+                coord[2] + offset[2],
+            ]);
         }
 
         match self.ndim {
             1 => {
                 for cc in &changed {
                     for dx in -r..=r {
-                        affected.push(self.coord_to_site(&[cc[0] + dx]));
+                        affected.push(self.coord_to_site([cc[0] + dx, 0, 0]));
                     }
                 }
             }
@@ -355,7 +456,8 @@ impl KMCEngine {
                 for cc in &changed {
                     for dx in -r..=r {
                         for dy in -r..=r {
-                            affected.push(self.coord_to_site(&[cc[0] + dx, cc[1] + dy]));
+                            affected.push(self.coord_to_site(
+                                [cc[0] + dx, cc[1] + dy, 0]));
                         }
                     }
                 }
@@ -366,7 +468,7 @@ impl KMCEngine {
                         for dy in -r..=r {
                             for dz in -r..=r {
                                 affected.push(self.coord_to_site(
-                                    &[cc[0] + dx, cc[1] + dy, cc[2] + dz]));
+                                    [cc[0]+dx, cc[1]+dy, cc[2]+dz]));
                             }
                         }
                     }
@@ -383,90 +485,87 @@ impl KMCEngine {
     fn update_avail_after_exec(&mut self, affected: &[usize]) {
         for &site in affected {
             for p in 0..self.nproc {
-                let was = self.site_in_avail[p].contains_key(&site);
+                let was = self.site_in_avail[p][site] >= 0;
                 let is = self.check_process_at_site(p, site);
 
-                if is && !was {
-                    self.add_to_avail(p, site);
-                } else if !is && was {
-                    self.remove_from_avail(p, site);
-                } else if is && was && self.has_lateral {
-                    let idx = self.site_in_avail[p][&site];
-                    let old = self.avail_rates[p][idx];
-                    let new = self.compute_site_rate(p, site);
-                    self.avail_rates[p][idx] = new;
-                    self.proc_total_rates[p] += new - old;
+                match (was, is) {
+                    (false, true) => self.add_to_avail(p, site),
+                    (true, false) => self.remove_from_avail(p, site),
+                    (true, true) if self.has_lateral => {
+                        // Rate may have changed due to neighbor state change
+                        let old_rate = self.site_rates[p][site];
+                        let new_rate = self.compute_site_rate(p, site);
+                        if (new_rate - old_rate).abs() > 1e-30 {
+                            self.site_rates[p][site] = new_rate;
+                            self.rate_trees[p].update(site, new_rate - old_rate);
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
     }
 
-    // ── Lateral interactions & BEP ────────────────────────────────────
+    // ── Lateral interactions & BEP ──────────────────────────────────
 
-    fn get_temperature(&self) -> f64 {
-        self.project.get_parameter("T")
+    /// Update cached beta_thermal = eV / (kB * T).
+    fn update_cached_beta(&mut self) {
+        let t = self.project.get_parameter("T");
+        self.cached_beta_th = if t > 0.0 { EV / (KB * t) } else { 0.0 };
     }
 
     /// Compute rate for (process, site) including lateral + BEP corrections.
+    /// Uses cached beta_thermal to avoid repeated HashMap lookups.
+    #[inline]
     fn compute_site_rate(&self, proc_id: usize, site: usize) -> f64 {
         let base_rate = self.rates[proc_id];
-        if !self.has_lateral {
-            return base_rate;
-        }
+        if !self.has_lateral || self.cached_beta_th == 0.0 { return base_rate; }
 
-        let t = self.get_temperature();
-        if t <= 0.0 {
-            return base_rate;
-        }
-        let beta_th = EV / (KB * t);
+        let beta_th = self.cached_beta_th;
+        let e_react = self.interaction_energy(proc_id, site, false);
 
-        let e_react = self.compute_interaction_energy(proc_id, site, false);
-
-        if let Some(&alpha) = self.bep_proc.get(&proc_id) {
-            let e_prod = self.compute_interaction_energy(proc_id, site, true);
+        let alpha = self.bep_alpha[proc_id];
+        if !alpha.is_nan() {
+            let e_prod = self.interaction_energy(proc_id, site, true);
             let delta_ea = alpha * (e_prod - e_react);
-            return base_rate * (-delta_ea * beta_th).exp();
+            base_rate * (-delta_ea * beta_th).exp()
+        } else {
+            base_rate * (e_react * beta_th).exp()
         }
-
-        // Default: reactant-state interaction modifies barrier
-        base_rate * (e_react * beta_th).exp()
     }
 
-    /// Sum pairwise interaction energy for condition (reactant) or action (product) sites.
-    fn compute_interaction_energy(&self, proc_id: usize, site: usize, is_product: bool) -> f64 {
+    /// Sum pairwise lateral interaction energy for condition/action sites.
+    /// Uses flat array lookup instead of HashMap for speed.
+    fn interaction_energy(&self, proc_id: usize, site: usize, is_product: bool) -> f64 {
         let coord = self.site_to_coord(site);
         let cp = &self.compiled[proc_id];
         let entries = if is_product { &cp.actions } else { &cp.conditions };
+        let ns = self.nspecies;
 
-        // Collect sites involved in this process
-        let proc_sites: Vec<usize> = entries.iter()
-            .map(|(off, _)| {
-                let nc: Vec<i32> = coord.iter().zip(off.iter())
-                    .map(|(&c, &o)| c + o).collect();
-                self.coord_to_site(&nc)
-            })
-            .collect();
+        // Collect process sites (typically 1-3, allocated on stack via SmallVec pattern)
+        let n_entries = entries.len();
+        let mut proc_site_buf = [0usize; 8];  // stack buffer, covers up to 8-site processes
+        for (i, &(off, _)) in entries.iter().enumerate() {
+            proc_site_buf[i] = self.offset_site(coord, off);
+        }
+        let proc_sites = &proc_site_buf[..n_entries];
 
         let mut e_total = 0.0;
-        for (i, (_off, sp_id)) in entries.iter().enumerate() {
-            if *sp_id == self.empty_species {
-                continue;
-            }
+        for (i, &(_off, sp_id)) in entries.iter().enumerate() {
+            if sp_id == self.empty_species { continue; }
             let entry_site = proc_sites[i];
             for &nn in &self.neighbors[entry_site] {
-                if proc_sites.contains(&nn) {
-                    continue;
-                }
+                // Skip intra-process pairs (only check if multi-site process)
+                if n_entries > 1 && proc_sites.contains(&nn) { continue; }
                 let nn_sp = self.lattice[nn] as usize;
-                if let Some(&energy) = self.lateral_dict.get(&(*sp_id, nn_sp)) {
-                    e_total += energy;
-                }
+                // Flat array lookup: O(1), no hashing
+                e_total += self.lateral_energy[sp_id * ns + nn_sp];
             }
         }
         e_total
     }
 
-    // ── Rates ─────────────────────────────────────────────────────────
+    // ── Rates ───────────────────────────────────────────────────────
 
     pub fn update_rate_constants(&mut self) {
         for i in 0..self.nproc {
@@ -475,40 +574,54 @@ impl KMCEngine {
                 &self.project.parameter_list,
             );
         }
-        if self.has_lateral && !self.avail_sites[0].is_empty() {
-            self.rebuild_per_site_rates();
+        if self.has_lateral && !self.rate_trees.is_empty() {
+            self.rebuild_lateral_rates();
+        }
+    }
+
+    fn rebuild_lateral_rates(&mut self) {
+        for p in 0..self.nproc {
+            self.rate_trees[p].clear();
+            for s in 0..self.nsites {
+                if self.site_in_avail[p][s] >= 0 {
+                    let rate = self.compute_site_rate(p, s);
+                    self.site_rates[p][s] = rate;
+                    self.rate_trees[p].update(s, rate);
+                } else {
+                    self.site_rates[p][s] = 0.0;
+                }
+            }
         }
     }
 
     fn update_accum_rates(&mut self) -> f64 {
         let mut total = 0.0;
         for p in 0..self.nproc {
-            if self.has_lateral {
-                total += self.proc_total_rates[p];
+            total += if self.has_lateral {
+                self.rate_trees[p].total()
             } else {
-                total += self.rates[p] * self.avail_sites[p].len() as f64;
-            }
+                self.rates[p] * self.avail_sites[p].len() as f64
+            };
             self.accum_rates[p] = total;
         }
         total
     }
 
-    // ── KMC Step (BKL) ───────────────────────────────────────────────
+    // ── KMC Step (BKL algorithm) ────────────────────────────────────
 
     /// Execute one BKL KMC step. Returns false if system is frozen.
     pub fn do_kmc_step(&mut self) -> bool {
         let total_rate = self.update_accum_rates();
-        if total_rate <= 0.0 {
-            return false;
-        }
+        if total_rate <= 0.0 { return false; }
 
-        let r_time: f64 = self.rng.gen();
-        let r_proc: f64 = self.rng.gen();
-        let r_site: f64 = self.rng.gen();
+        // Clamp to avoid ln(0) and degenerate edge cases
+        let r_time: f64 = self.rng.gen::<f64>().max(f64::MIN_POSITIVE);
+        let r_proc: f64 = self.rng.gen::<f64>().max(f64::MIN_POSITIVE);
+        let r_site: f64 = self.rng.gen::<f64>().max(f64::MIN_POSITIVE);
 
         self.kmc_time += -r_time.ln() / total_rate;
 
-        // Process selection (binary search)
+        // Process selection: binary search O(log N_proc)
         let target = r_proc * total_rate;
         let proc_id = match self.accum_rates[..self.nproc]
             .binary_search_by(|v| v.partial_cmp(&target).unwrap())
@@ -518,43 +631,25 @@ impl KMCEngine {
         };
 
         // Site selection
-        let n_avail = self.avail_sites[proc_id].len();
-        if n_avail == 0 {
-            return false;
-        }
-
-        let site_idx = if self.has_lateral {
-            // Select site proportional to per-site rate
-            let total_proc = self.proc_total_rates[proc_id];
-            if total_proc <= 0.0 {
-                return false;
-            }
-            let target = r_site * total_proc;
-            let mut cumul = 0.0;
-            let mut chosen = n_avail - 1;
-            for k in 0..n_avail {
-                cumul += self.avail_rates[proc_id][k];
-                if cumul >= target {
-                    chosen = k;
-                    break;
-                }
-            }
-            chosen
+        let site = if self.has_lateral {
+            // Fenwick tree: O(log N_sites)
+            let proc_total = self.rate_trees[proc_id].total();
+            if proc_total <= 0.0 { return false; }
+            self.rate_trees[proc_id].find(r_site * proc_total)
         } else {
-            // Uniform selection
-            ((r_site * n_avail as f64) as usize).min(n_avail - 1)
+            // Uniform random: O(1)
+            let n = self.avail_sites[proc_id].len();
+            if n == 0 { return false; }
+            let idx = ((r_site * n as f64) as usize).min(n - 1);
+            self.avail_sites[proc_id][idx]
         };
-
-        let site = self.avail_sites[proc_id][site_idx];
 
         // Execute: update lattice
         let coord = self.site_to_coord(site);
         let cp = &self.compiled[proc_id];
-        for (offset, new_sp) in &cp.actions {
-            let nc: Vec<i32> = coord.iter().zip(offset.iter())
-                .map(|(&c, &o)| c + o).collect();
-            let ns = self.coord_to_site(&nc);
-            self.lattice[ns] = *new_sp as u16;
+        for &(offset, new_sp) in &cp.actions {
+            let ns = self.offset_site(coord, offset);
+            self.lattice[ns] = new_sp as u16;
         }
 
         // Update bookkeeping
@@ -563,6 +658,16 @@ impl KMCEngine {
 
         self.kmc_step += 1;
         self.procstat[proc_id] += 1;
+
+        // Periodic Fenwick tree rebuild to prevent floating-point drift
+        if self.has_lateral {
+            self.steps_since_rebuild += 1;
+            if self.steps_since_rebuild >= 100_000 {
+                self.rebuild_lateral_rates();
+                self.steps_since_rebuild = 0;
+            }
+        }
+
         true
     }
 
@@ -583,7 +688,7 @@ impl KMCEngine {
         }
     }
 
-    // ── Observables ──────────────────────────────────────────────────
+    // ── Observables ─────────────────────────────────────────────────
 
     pub fn get_coverage(&self) -> HashMap<String, f64> {
         let mut counts = vec![0usize; self.nspecies];
@@ -599,9 +704,7 @@ impl KMCEngine {
 
     pub fn get_tof(&mut self) -> HashMap<String, f64> {
         let dt = self.kmc_time - self.prev_time;
-        if dt <= 0.0 {
-            return HashMap::new();
-        }
+        if dt <= 0.0 { return HashMap::new(); }
         let mut tof = HashMap::new();
         for p in 0..self.nproc {
             let delta = self.procstat[p] - self.prev_procstat[p];
@@ -630,10 +733,13 @@ impl KMCEngine {
         counts
     }
 
-    // ── Parameter modification ───────────────────────────────────────
+    // ── Parameters ──────────────────────────────────────────────────
 
     pub fn set_parameter(&mut self, name: &str, value: f64) {
         self.project.set_parameter(name, value);
+        if name == "T" {
+            self.update_cached_beta();
+        }
         self.update_rate_constants();
     }
 
@@ -641,7 +747,7 @@ impl KMCEngine {
         self.project.get_parameter(name)
     }
 
-    // ── Site type manipulation ────────────────────────────────────────
+    // ── Site types ──────────────────────────────────────────────────
 
     pub fn set_site_type(&mut self, site: usize, stype: i32) {
         self.site_types[site] = stype;
@@ -650,17 +756,14 @@ impl KMCEngine {
     pub fn set_site_types_region<F: Fn(&[i32]) -> bool>(&mut self, f: F, stype: i32) {
         for s in 0..self.nsites {
             let coord = self.site_to_coord(s);
-            if f(&coord) {
+            if f(&coord[..self.ndim]) {
                 self.site_types[s] = stype;
             }
         }
-        self.rebuild_avail_sites();
-        if self.has_lateral {
-            self.rebuild_per_site_rates();
-        }
+        self.rebuild_avail();
     }
 
-    // ── State management ─────────────────────────────────────────────
+    // ── State management ────────────────────────────────────────────
 
     pub fn reset(&mut self) {
         self.lattice.fill(0);
@@ -670,30 +773,33 @@ impl KMCEngine {
         self.procstat.fill(0);
         self.prev_procstat.fill(0);
         self.prev_time = 0.0;
-        self.rebuild_avail_sites();
-        if self.has_lateral {
-            self.rebuild_per_site_rates();
-        }
+        self.rebuild_avail();
     }
 
-    // ── Printing ─────────────────────────────────────────────────────
+    // ── Printing ────────────────────────────────────────────────────
 
     pub fn print_rates(&self) {
         println!("\nRate constants:");
         println!("  {:<35} {:>12}  {:>8}", "Process", "k [s^-1]", "N_avail");
         println!("  {} {}  {}", "-".repeat(35), "-".repeat(12), "-".repeat(8));
         for i in 0..self.nproc {
+            let n_avail = if self.has_lateral {
+                self.site_in_avail[i].iter().filter(|&&v| v >= 0).count()
+            } else {
+                self.avail_sites[i].len()
+            };
             println!("  {:<35} {:>12.4e}  {:>8}",
                      self.project.process_list[i].name,
-                     self.rates[i],
-                     self.avail_sites[i].len());
+                     self.rates[i], n_avail);
         }
         if self.has_lateral {
-            println!("  Lateral interactions: {}, BEP: {}",
-                     self.lateral_dict.len() / 2, self.bep_proc.len());
+            let n_lat = self.lateral_energy.iter().filter(|&&v| v != 0.0).count() / 2;
+            let n_bep = self.bep_alpha.iter().filter(|v| !v.is_nan()).count();
+            println!("  Lateral interactions: {}, BEP: {}", n_lat, n_bep);
             if !self.neighbors.is_empty() {
                 println!("  Neighbors per site: {}", self.neighbors[0].len());
             }
+            println!("  Site selection: Fenwick tree O(log N)");
         }
         println!();
     }
@@ -714,46 +820,43 @@ impl KMCEngine {
     pub fn neighbors_of(&self, site: usize) -> &[usize] { &self.neighbors[site] }
 }
 
-// ── Neighbor list construction ──────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+//  Neighbor list construction
+// ═══════════════════════════════════════════════════════════════════════
 
-fn build_neighbor_list(ndim: usize, lattice_size: &[usize], nsites: usize) -> Vec<Vec<usize>> {
-    let nn_offsets: Vec<Vec<i32>> = match ndim {
-        1 => vec![vec![-1], vec![1]],
-        2 => vec![vec![-1, 0], vec![1, 0], vec![0, -1], vec![0, 1]],
-        3 => vec![
-            vec![-1, 0, 0], vec![1, 0, 0],
-            vec![0, -1, 0], vec![0, 1, 0],
-            vec![0, 0, -1], vec![0, 0, 1],
-        ],
-        _ => vec![],
+fn build_neighbor_list(ndim: usize, ls: &[usize; 3], nsites: usize) -> Vec<Vec<usize>> {
+    let nn_offsets: &[[i32; 3]] = match ndim {
+        1 => &[[-1,0,0], [1,0,0]],
+        2 => &[[-1,0,0], [1,0,0], [0,-1,0], [0,1,0]],
+        3 => &[[-1,0,0], [1,0,0], [0,-1,0], [0,1,0], [0,0,-1], [0,0,1]],
+        _ => &[],
     };
 
-    let mut neighbors = vec![Vec::new(); nsites];
+    let mut neighbors = vec![Vec::with_capacity(nn_offsets.len()); nsites];
     for s in 0..nsites {
-        let coord = match ndim {
-            1 => vec![s as i32],
-            2 => vec![(s / lattice_size[1]) as i32, (s % lattice_size[1]) as i32],
+        let coord: [i32; 3] = match ndim {
+            1 => [s as i32, 0, 0],
+            2 => [(s / ls[1]) as i32, (s % ls[1]) as i32, 0],
             3 => {
-                let ly = lattice_size[1];
-                let lz = lattice_size[2];
-                vec![(s / (ly * lz)) as i32, ((s % (ly * lz)) / lz) as i32, (s % lz) as i32]
+                let lylz = ls[1] * ls[2];
+                [(s / lylz) as i32, ((s % lylz) / ls[2]) as i32, (s % ls[2]) as i32]
             }
-            _ => vec![],
+            _ => [0, 0, 0],
         };
-        for off in &nn_offsets {
-            let nc: Vec<i32> = coord.iter().zip(off.iter()).map(|(&c, &o)| c + o).collect();
+        for off in nn_offsets {
+            let nc = [coord[0]+off[0], coord[1]+off[1], coord[2]+off[2]];
             let ns = match ndim {
-                1 => nc[0].rem_euclid(lattice_size[0] as i32) as usize,
+                1 => nc[0].rem_euclid(ls[0] as i32) as usize,
                 2 => {
-                    let x = nc[0].rem_euclid(lattice_size[0] as i32) as usize;
-                    let y = nc[1].rem_euclid(lattice_size[1] as i32) as usize;
-                    x * lattice_size[1] + y
+                    let x = nc[0].rem_euclid(ls[0] as i32) as usize;
+                    let y = nc[1].rem_euclid(ls[1] as i32) as usize;
+                    x * ls[1] + y
                 }
                 3 => {
-                    let x = nc[0].rem_euclid(lattice_size[0] as i32) as usize;
-                    let y = nc[1].rem_euclid(lattice_size[1] as i32) as usize;
-                    let z = nc[2].rem_euclid(lattice_size[2] as i32) as usize;
-                    x * lattice_size[1] * lattice_size[2] + y * lattice_size[2] + z
+                    let x = nc[0].rem_euclid(ls[0] as i32) as usize;
+                    let y = nc[1].rem_euclid(ls[1] as i32) as usize;
+                    let z = nc[2].rem_euclid(ls[2] as i32) as usize;
+                    x * ls[1] * ls[2] + y * ls[2] + z
                 }
                 _ => 0,
             };
@@ -763,4 +866,63 @@ fn build_neighbor_list(ndim: usize, lattice_size: &[usize], nsites: usize) -> Ve
         }
     }
     neighbors
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fenwick_basic() {
+        let mut ft = FenwickTree::new(4);
+        ft.update(0, 3.0);
+        ft.update(1, 4.0);
+        ft.update(2, 1.0);
+        ft.update(3, 7.0);
+        assert!((ft.total() - 15.0).abs() < 1e-10);
+        // find: smallest i such that prefix_sum(0..=i) >= target
+        assert_eq!(ft.find(3.0), 0);   // prefix[0]=3 >= 3
+        assert_eq!(ft.find(3.5), 1);   // prefix[0]=3 < 3.5, prefix[1]=7 >= 3.5
+        assert_eq!(ft.find(7.0), 1);   // prefix[1]=7 >= 7
+        assert_eq!(ft.find(7.5), 2);   // prefix[2]=8 >= 7.5
+        assert_eq!(ft.find(8.0), 2);   // prefix[2]=8 >= 8
+        assert_eq!(ft.find(8.5), 3);   // prefix[3]=15 >= 8.5
+    }
+
+    #[test]
+    fn test_fenwick_update_remove() {
+        let mut ft = FenwickTree::new(3);
+        ft.update(0, 5.0);
+        ft.update(1, 3.0);
+        ft.update(2, 2.0);
+        assert!((ft.total() - 10.0).abs() < 1e-10);
+
+        // Remove element 1 (set to 0)
+        ft.update(1, -3.0);
+        assert!((ft.total() - 7.0).abs() < 1e-10);
+        assert_eq!(ft.find(5.0), 0);   // prefix[0]=5 >= 5
+        assert_eq!(ft.find(5.5), 2);   // prefix[0]=5 < 5.5, prefix[1]=5 < 5.5, prefix[2]=7 >= 5.5
+    }
+
+    #[test]
+    fn test_fenwick_clear() {
+        let mut ft = FenwickTree::new(4);
+        ft.update(0, 10.0);
+        ft.update(3, 5.0);
+        assert!((ft.total() - 15.0).abs() < 1e-10);
+        ft.clear();
+        assert!((ft.total()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_to_offset3() {
+        assert_eq!(to_offset3(&[]), [0, 0, 0]);
+        assert_eq!(to_offset3(&[1]), [1, 0, 0]);
+        assert_eq!(to_offset3(&[1, -1]), [1, -1, 0]);
+        assert_eq!(to_offset3(&[1, -1, 2]), [1, -1, 2]);
+    }
 }

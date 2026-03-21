@@ -185,8 +185,6 @@ impl MicroKineticModel {
     pub fn solve_steady_state_with(&self, initial: Option<&[f64]>) -> HashMap<String, f64> {
         let n = self.species.len();
 
-        // Default: first species gets ~92%, others get 1% each
-        // This ensures Σθ ≈ 1 (no "empty" leftover in cycle mode)
         let mut theta = match initial {
             Some(t0) => t0.to_vec(),
             None => {
@@ -196,33 +194,101 @@ impl MicroKineticModel {
             }
         };
 
-        // Run with progressively larger time steps
+        // Phase 1: Pre-equilibrate with adaptive Euler to get near basin
         for &(dt, steps) in &[
-            (1e-15, 1000), (1e-12, 1000), (1e-9, 1000),
-            (1e-6, 1000), (1e-3, 1000), (1.0, 1000),
-            (1e3, 1000), (1e6, 1000),
+            (1e-15, 200), (1e-12, 200), (1e-9, 200),
+            (1e-6, 200), (1e-3, 200), (1.0, 200),
         ] {
             for _ in 0..steps {
                 let k1 = self.build_odes(&theta);
-
-                // Simple Euler with small step
                 for i in 0..n {
                     theta[i] += dt * k1[i];
                     theta[i] = theta[i].clamp(0.0, 1.0);
                 }
                 let total: f64 = theta.iter().sum();
                 if total > 1.0 {
-                    for v in theta.iter_mut() {
-                        *v /= total;
-                    }
+                    for v in theta.iter_mut() { *v /= total; }
+                }
+            }
+            let dtheta = self.build_odes(&theta);
+            let max_d: f64 = dtheta.iter().map(|&d| d.abs()).fold(0.0, f64::max);
+            if max_d < 1e-12 { break; }
+        }
+
+        // Phase 2: Newton-Raphson to polish solution — f(θ) = dθ/dt = 0
+        // J[i][j] = ∂f_i/∂θ_j  (finite-difference Jacobian)
+        let eps = 1e-8;
+        for _newton_iter in 0..50 {
+            let f0 = self.build_odes(&theta);
+            let max_f: f64 = f0.iter().map(|&v| v.abs()).fold(0.0, f64::max);
+            if max_f < 1e-15 { break; }
+
+            // Build Jacobian by finite differences
+            let mut jac = vec![vec![0.0; n]; n];
+            for j in 0..n {
+                let h = (theta[j].abs() * eps).max(eps);
+                let mut theta_p = theta.clone();
+                theta_p[j] += h;
+                // Clamp and renormalize perturbed state
+                theta_p[j] = theta_p[j].min(1.0);
+                let fp = self.build_odes(&theta_p);
+                for i in 0..n {
+                    jac[i][j] = (fp[i] - f0[i]) / h;
                 }
             }
 
-            // Check convergence
-            let dtheta = self.build_odes(&theta);
-            let max_d: f64 = dtheta.iter().map(|&d| d.abs()).fold(0.0, f64::max);
-            if max_d < 1e-15 {
-                break;
+            // Solve J * delta = -f0  via Gaussian elimination with partial pivoting
+            let delta = solve_linear_system(&jac, &f0.iter().map(|v| -v).collect::<Vec<_>>(), n);
+
+            if let Some(delta) = delta {
+                // Damped Newton step: line search with backtracking
+                let mut alpha = 1.0;
+                for _ in 0..10 {
+                    let mut theta_new = theta.clone();
+                    for i in 0..n {
+                        theta_new[i] += alpha * delta[i];
+                        theta_new[i] = theta_new[i].clamp(0.0, 1.0);
+                    }
+                    let total: f64 = theta_new.iter().sum();
+                    if total > 1.0 {
+                        for v in theta_new.iter_mut() { *v /= total; }
+                    }
+                    let f_new = self.build_odes(&theta_new);
+                    let new_norm: f64 = f_new.iter().map(|v| v * v).sum::<f64>();
+                    let old_norm: f64 = f0.iter().map(|v| v * v).sum::<f64>();
+                    if new_norm < old_norm {
+                        theta = theta_new;
+                        break;
+                    }
+                    alpha *= 0.5;
+                }
+                if alpha < 1.0 / 1024.0 {
+                    // Newton stalled, fall back to Euler
+                    for _ in 0..500 {
+                        let k = self.build_odes(&theta);
+                        for i in 0..n {
+                            theta[i] += 1e3 * k[i];
+                            theta[i] = theta[i].clamp(0.0, 1.0);
+                        }
+                        let total: f64 = theta.iter().sum();
+                        if total > 1.0 {
+                            for v in theta.iter_mut() { *v /= total; }
+                        }
+                    }
+                }
+            } else {
+                // Singular Jacobian — continue with Euler
+                for _ in 0..500 {
+                    let k = self.build_odes(&theta);
+                    for i in 0..n {
+                        theta[i] += 1e3 * k[i];
+                        theta[i] = theta[i].clamp(0.0, 1.0);
+                    }
+                    let total: f64 = theta.iter().sum();
+                    if total > 1.0 {
+                        for v in theta.iter_mut() { *v /= total; }
+                    }
+                }
             }
         }
 
@@ -299,4 +365,59 @@ impl MicroKineticModel {
         }
         println!("{}", "=".repeat(65));
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Linear solver: Gaussian elimination with partial pivoting
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Solve A·x = b via Gaussian elimination with partial pivoting.
+/// Returns None if the matrix is singular.
+fn solve_linear_system(a: &[Vec<f64>], b: &[f64], n: usize) -> Option<Vec<f64>> {
+    // Augmented matrix [A | b]
+    let mut aug: Vec<Vec<f64>> = (0..n).map(|i| {
+        let mut row = a[i].clone();
+        row.push(b[i]);
+        row
+    }).collect();
+
+    // Forward elimination
+    for col in 0..n {
+        // Partial pivoting: find max absolute value in column
+        let mut max_row = col;
+        let mut max_val = aug[col][col].abs();
+        for row in (col + 1)..n {
+            let v = aug[row][col].abs();
+            if v > max_val {
+                max_val = v;
+                max_row = row;
+            }
+        }
+        if max_val < 1e-30 {
+            return None;  // Singular
+        }
+        if max_row != col {
+            aug.swap(col, max_row);
+        }
+
+        let pivot = aug[col][col];
+        for row in (col + 1)..n {
+            let factor = aug[row][col] / pivot;
+            for j in col..=n {
+                aug[row][j] -= factor * aug[col][j];
+            }
+        }
+    }
+
+    // Back substitution
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev() {
+        let mut sum = aug[i][n];
+        for j in (i + 1)..n {
+            sum -= aug[i][j] * x[j];
+        }
+        x[i] = sum / aug[i][i];
+    }
+
+    Some(x)
 }

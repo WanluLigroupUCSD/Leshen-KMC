@@ -12,32 +12,42 @@ pub fn evaluate_rate_expression(expr: &RateExpr, params: &[Parameter]) -> f64 {
     }
 }
 
+/// Lazily-initialized base variable map (constants + molecular masses).
+/// Avoids rebuilding ~30 HashMap entries on every rate evaluation.
+use std::sync::OnceLock;
+
+static BASE_VARS: OnceLock<HashMap<String, f64>> = OnceLock::new();
+
+fn get_base_vars() -> &'static HashMap<String, f64> {
+    BASE_VARS.get_or_init(|| {
+        let mut vars = HashMap::with_capacity(32);
+        // Physical constants
+        vars.insert("kB".into(), KB);
+        vars.insert("h".into(), H_PLANCK);
+        vars.insert("eV".into(), EV);
+        vars.insert("bar".into(), BAR);
+        vars.insert("angstrom".into(), ANGSTROM);
+        vars.insert("umass".into(), UMASS);
+        vars.insert("pi".into(), PI);
+        vars.insert("NA".into(), NA);
+        vars.insert("e".into(), E_CHARGE);
+        // Molecular masses
+        for name in &["H", "H2", "N", "N2", "O2", "CO", "CO2", "H2O", "NH3",
+                       "N2H4", "NNH", "Mo", "W"] {
+            vars.insert(format!("m_{}", name), molecular_mass(name));
+        }
+        vars
+    })
+}
+
 /// Evaluate a string-based rate expression.
 ///
-/// Supports variables: kB, h, eV, bar, angstrom, umass, pi, beta, T,
-/// m_N2, m_CO, etc., and all user-defined parameters.
+/// Uses cached base constants; only merges user parameters per call.
 fn evaluate_string_expr(expr: &str, params: &[Parameter]) -> f64 {
-    // Build variable map
-    let mut vars: HashMap<String, f64> = HashMap::new();
+    let base = get_base_vars();
+    let mut vars = base.clone();
 
-    // Physical constants
-    vars.insert("kB".into(), KB);
-    vars.insert("h".into(), H_PLANCK);
-    vars.insert("eV".into(), EV);
-    vars.insert("bar".into(), BAR);
-    vars.insert("angstrom".into(), ANGSTROM);
-    vars.insert("umass".into(), UMASS);
-    vars.insert("pi".into(), PI);
-    vars.insert("NA".into(), NA);
-    vars.insert("e".into(), E_CHARGE);
-
-    // Molecular masses
-    for name in &["H", "H2", "N", "N2", "O2", "CO", "CO2", "H2O", "NH3",
-                   "N2H4", "NNH", "Mo", "W"] {
-        vars.insert(format!("m_{}", name), molecular_mass(name));
-    }
-
-    // User parameters
+    // User parameters (typically 3-5 entries)
     for p in params {
         vars.insert(p.name.clone(), p.value);
     }
@@ -49,7 +59,6 @@ fn evaluate_string_expr(expr: &str, params: &[Parameter]) -> f64 {
         }
     }
 
-    // Simple expression evaluator
     match eval_expr(expr, &vars) {
         Ok(v) if v.is_finite() => v.max(0.0),
         Ok(v) => {

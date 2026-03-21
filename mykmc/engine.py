@@ -214,17 +214,24 @@ class KMCEngine:
                     (0, 1, 0), (0, 0, -1), (0, 0, 1)]
 
     def _setup_lateral_interactions(self):
-        """Build lateral interaction lookup dict from project definition."""
-        self._lateral_dict = {}
+        """Build lateral interaction lookup (flat 2D array for speed)."""
+        # Flat 2D array: lateral_energy[sp1, sp2] = energy (0 = none)
+        self._lateral_energy = np.zeros((self.nspecies, self.nspecies))
         if hasattr(self.project, 'lateral_interactions'):
             for li in self.project.lateral_interactions:
                 sp1 = self.species_id.get(li.species1)
                 sp2 = self.species_id.get(li.species2)
                 if sp1 is not None and sp2 is not None:
-                    self._lateral_dict[(sp1, sp2)] = li.energy
-                    # Symmetric: A-B same as B-A
-                    self._lateral_dict[(sp2, sp1)] = li.energy
-        self._has_lateral = bool(self._lateral_dict)
+                    self._lateral_energy[sp1, sp2] = li.energy
+                    self._lateral_energy[sp2, sp1] = li.energy
+        self._has_lateral = bool(np.any(self._lateral_energy != 0))
+        # Keep dict for backward compatibility in repr
+        self._lateral_dict = {}
+        if self._has_lateral:
+            for i in range(self.nspecies):
+                for j in range(self.nspecies):
+                    if self._lateral_energy[i, j] != 0:
+                        self._lateral_dict[(i, j)] = self._lateral_energy[i, j]
 
     def _setup_bep_relations(self):
         """Build BEP relation lookup from project definition."""
@@ -396,18 +403,32 @@ class KMCEngine:
         """
         Get all sites whose process availability might change
         after executing actions rooted at site.
+        Uses neighbor-list fast path for single-site processes.
         """
+        # Fast path: single-site process with max_offset <= 1
+        # Use neighbor list directly (5 sites in 2D vs 9 from grid)
+        if len(actions) == 1 and self._max_offset <= 1:
+            offset, _ = actions[0]
+            if all(o == 0 for o in offset):
+                action_site = site
+            else:
+                coord = self._site_to_coord(site)
+                nc = tuple(c + o for c, o in zip(coord, offset))
+                action_site = self._coord_to_site(nc)
+            affected = set(self.neighbors[action_site])
+            affected.add(action_site)
+            return affected
+
+        # General path: coordinate grid
         coord = self._site_to_coord(site)
         affected = set()
         r = self._max_offset
 
-        # Sites directly changed by actions
         changed_coords = []
         for offset, _ in actions:
             nc = tuple(c + o for c, o in zip(coord, offset))
             changed_coords.append(nc)
 
-        # Expand to include neighbors within max_offset range
         if self.ndim == 1:
             for cc in changed_coords:
                 for dx in range(-r, r + 1):
@@ -517,21 +538,20 @@ class KMCEngine:
             proc_sites.add(ps)
 
         E_total = 0.0
+        n_entries = len(entries)
         for offset, sp_id in entries:
             if sp_id == self._empty_species:
-                continue  # Empty sites have no lateral interactions
+                continue
 
             entry_site = self._coord_to_site(
                 tuple(c + o for c, o in zip(coord, offset)))
 
             for nn in self.neighbors[entry_site]:
-                if nn in proc_sites:
-                    continue  # Skip intra-process neighbor
-
+                if n_entries > 1 and nn in proc_sites:
+                    continue
                 nn_sp = self.lattice[nn]
-                pair = (sp_id, nn_sp)
-                if pair in self._lateral_dict:
-                    E_total += self._lateral_dict[pair]
+                # Flat array lookup (no dict hash)
+                E_total += self._lateral_energy[sp_id, nn_sp]
 
         return E_total
 
