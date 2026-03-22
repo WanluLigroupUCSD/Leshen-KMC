@@ -1,0 +1,79 @@
+{
+  "tasks": [
+    {
+      "id": "T1",
+      "description": "Phase 1: Collect DFT parameters for HER on Pt(111) from Li et al. 2024",
+      "status": "completed",
+      "completed_at": "2026-03-21",
+      "depends_on": []
+    },
+    {
+      "id": "T2",
+      "description": "Phase 1: Implement HER Pt(111) model in Python + Rust",
+      "status": "completed",
+      "completed_at": "2026-03-21",
+      "depends_on": ["T1"],
+      "note": "Python KMC + MKM done, verified. Rust pending user DFT data."
+    },
+    {
+      "id": "T3",
+      "description": "Phase 1: Run HER validation (Langmuir, Tafel slope, lateral, diffusion, KMC vs MKM, lattice convergence)",
+      "status": "completed",
+      "completed_at": "2026-03-21",
+      "depends_on": ["T2"],
+      "note": "All 6 tests PASSED. validate_her.py created. Pure Python ~1500 steps/s."
+    },
+    {
+      "id": "T4",
+      "description": "Phase 1: Generate HER polarization curves and compare with experiment",
+      "status": "completed",
+      "completed_at": "2026-03-21",
+      "depends_on": ["T3"],
+      "note": "MKM 101pts + KMC 11pts. j0=0.45 mA/cm2, Tafel=81 mV/dec, Heyrovsky-dominant. KMC theta_H ~0.33 vs MKM ~0.76. run_polarization_her.py + results/ dir."
+    },
+    {
+      "id": "T5",
+      "description": "Phase 2: Collect DFT parameters for CO2RR on Cu(100) from Wei 2025, Montoya 2015, Norskov",
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "T6",
+      "description": "Phase 2: Implement CO2RR Cu(100) model (~8 species, ~12 processes, CO*-CO* lateral, diffusion)",
+      "status": "pending",
+      "depends_on": ["T5"]
+    },
+    {
+      "id": "T7",
+      "description": "Phase 2: Study A — CO* spatial distribution mapping (vary lateral interaction strength)",
+      "status": "pending",
+      "depends_on": ["T6"]
+    },
+    {
+      "id": "T8",
+      "description": "Phase 2: Study B — C1/C2 selectivity vs potential (KMC vs MKM comparison)",
+      "status": "pending",
+      "depends_on": ["T7"]
+    },
+    {
+      "id": "T9",
+      "description": "Phase 2: Study C — Diffusion rate effect on C2 selectivity (mean-field breakdown threshold)",
+      "status": "pending",
+      "depends_on": ["T7"]
+    },
+    {
+      "id": "T10",
+      "description": "Phase 2: Study D — Polarization curves and Faradaic efficiency plots",
+      "status": "pending",
+      "depends_on": ["T8", "T9"]
+    },
+    {
+      "id": "T11",
+      "description": "Write complete research plan document",
+      "status": "completed",
+      "completed_at": "2026-03-21",
+      "depends_on": []
+    }
+  ],
+  "last_updated": "2026-03-21T20:50"
+}

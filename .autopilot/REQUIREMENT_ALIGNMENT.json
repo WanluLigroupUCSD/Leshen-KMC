@@ -1,0 +1,37 @@
+{
+  "project": "Leshen-KMC validation and CO2RR C2 selectivity study",
+  "goal": "Phase 1: Validate Leshen-KMC with HER on Pt(111). Phase 2: Investigate CO* spatial distribution effects on C2 selectivity in CO2RR on Cu(100) — first electrocatalytic spatial KMC study of C-C coupling",
+  "requirements": [
+    {
+      "id": "R1",
+      "description": "Phase 1: Build and validate HER Pt(111) model (Volmer/Tafel/Heyrovsky, lateral, diffusion, polarization curve)",
+      "status": "completed"
+    },
+    {
+      "id": "R2",
+      "description": "Phase 2: Build CO2RR Cu(100) model with CO* dimerization, lateral interactions, diffusion",
+      "status": "pending"
+    },
+    {
+      "id": "R3",
+      "description": "Phase 2: Investigate CO* spatial distribution (island vs uniform) and its effect on C2 selectivity",
+      "status": "pending"
+    },
+    {
+      "id": "R4",
+      "description": "Phase 2: Compare KMC vs MKM predictions for C1/C2 selectivity — quantify mean-field error",
+      "status": "pending"
+    },
+    {
+      "id": "R5",
+      "description": "Phase 2: Study CO* diffusion rate and lateral interaction strength as tuning knobs for C2 selectivity",
+      "status": "pending"
+    },
+    {
+      "id": "R6",
+      "description": "Generate polarization curves and Faradaic efficiency vs potential for CO2RR",
+      "status": "pending"
+    }
+  ],
+  "last_updated": "2026-03-21"
+}

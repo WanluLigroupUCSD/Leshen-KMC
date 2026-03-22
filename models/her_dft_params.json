@@ -1,0 +1,85 @@
+{
+  "_comment": "DFT parameters for HER on Pt(111) in acidic media",
+  "_references": {
+    "Li_2024": "Li et al., ACS Catal. 14, 2696-2708 (2024). DOI: 10.1021/acscatal.3c04588",
+    "Skulason_2010": "Skulason et al., J. Phys. Chem. C 114, 18182-18197 (2010)",
+    "Karlberg_2007": "Karlberg et al., Phys. Rev. Lett. 99, 126101 (2007)",
+    "Greeley_2004": "Greeley & Mavrikakis, J. Phys. Chem. B 109, 3460-3471 (2005)"
+  },
+  "system": {
+    "surface": "Pt(111)",
+    "medium": "acidic (pH ~ 0)",
+    "temperature_K": 298,
+    "lattice": "2D square (approximating top sites)",
+    "lattice_constant_A": 2.775,
+    "nn_sites": 4
+  },
+  "species": ["empty", "H"],
+  "activation_energies_eV": {
+    "Volmer_fwd": {
+      "value": 0.67,
+      "reaction": "H+(aq) + e- + * -> H*",
+      "type": "PCET",
+      "source": "Li_2024",
+      "note": "at theta -> 0 (zero-coverage limit)"
+    },
+    "Volmer_rev": {
+      "value": 0.62,
+      "reaction": "H* -> H+(aq) + e- + *",
+      "type": "PCET",
+      "source": "Li_2024",
+      "note": "at theta -> 0"
+    },
+    "Tafel": {
+      "value": 0.85,
+      "reaction": "H* + H*(adj) -> H2(g) + 2*",
+      "type": "thermal",
+      "source": "Skulason_2010",
+      "note": "recombinative desorption, requires adjacent H* pair"
+    },
+    "Heyrovsky_fwd": {
+      "value": 0.70,
+      "reaction": "H* + H+(aq) + e- -> H2(g) + *",
+      "type": "PCET",
+      "source": "Li_2024",
+      "note": "electrochemical desorption"
+    },
+    "H_diffusion": {
+      "value": 0.10,
+      "reaction": "H*@s1 + *@s2 -> *@s1 + H*@s2",
+      "type": "thermal",
+      "source": "Greeley_2004",
+      "note": "NN hop on Pt(111)"
+    }
+  },
+  "lateral_interactions_eV": {
+    "H_H": {
+      "value": 0.10,
+      "sign": "repulsive (positive)",
+      "range": "nearest neighbor",
+      "source": "Karlberg_2007",
+      "note": "At theta_H = 1 ML, 4 NN -> 0.40 eV total destabilization"
+    }
+  },
+  "bep_relations": {
+    "Volmer_fwd": {
+      "alpha": 0.5,
+      "note": "standard proximity factor for PCET"
+    }
+  },
+  "electrochemistry": {
+    "beta_BV": 0.5,
+    "U0_V_RHE": 0.0,
+    "n_electrons_per_H2": 2,
+    "note": "Butler-Volmer: k(U) = (kBT/h) * exp(-(Ea + beta*(U-U0))/(kBT))"
+  },
+  "simulation_defaults": {
+    "lattice_size": [50, 50],
+    "T_K": 298,
+    "U_range_V": [-0.5, -0.45, -0.4, -0.35, -0.3, -0.25, -0.2, -0.15, -0.1, -0.05, 0.0],
+    "equilibration_steps": 1000000,
+    "production_steps": 1000000,
+    "sampling_interval": 10000,
+    "independent_runs": 5
+  }
+}
