@@ -1,5 +1,5 @@
 """
-HER on Pt(111): KMC + MKM model for Leshen-KMC validation.
+HER on Pt(111): KMC + MKM model for SPARK validation.
 
 Reaction network (acidic media):
   1. Volmer (fwd):  H+(aq) + e- + *  -> H*         (PCET, Ea=0.67 eV)
@@ -24,9 +24,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from mykmc.types import Project, Site, Layer, Condition, Action, Coord
-from mykmc.rates import tst_rate, electrochemical_rate
-from mykmc.units import kB, h, eV, e_charge
+from spark.types import Project, Site, Layer, Condition, Action, Coord
+from spark.rates import tst_rate, electrochemical_rate
+from spark.units import kB, h, eV, e_charge
 
 # ============================================================================
 #  DFT Parameters
@@ -70,7 +70,7 @@ def build_kmc_model():
     """
     pt = Project()
     pt.set_meta(
-        author='Leshen-KMC',
+        author='SPARK',
         model_name='HER_Pt111',
         model_dimension=2,
     )
@@ -182,7 +182,7 @@ def build_microkinetic_model():
     Same reaction network as KMC but without spatial resolution.
     Returns a MicroKineticModel object.
     """
-    from mykmc.microkinetic import MicroKineticModel
+    from spark.microkinetic import MicroKineticModel
 
     mkm = MicroKineticModel()
     mkm.add_species('H')
@@ -273,7 +273,7 @@ def build_polarization_curve(method='mkm'):
     -------
     PolarizationCurve (if method='mkm')
     """
-    from mykmc.polarization import PolarizationCurve
+    from spark.polarization import PolarizationCurve
 
     if method == 'mkm':
         mkm = build_microkinetic_model()
@@ -329,8 +329,8 @@ def run_kmc_polarization(U_range, T=298.0, lattice_size=50,
         'tof_Heyrovsky': TOF_Heyrovsky array
         'j_total'     : total current density [mA/cm^2]
     """
-    from mykmc.engine import KMCEngine
-    from mykmc.polarization import tof_to_current_density
+    from spark.engine import KMCEngine
+    from spark.polarization import tof_to_current_density
 
     U_range = np.asarray(U_range, dtype=float)
     results = {
@@ -440,7 +440,7 @@ if __name__ == '__main__':
         # 3. Quick KMC run
         print(f"\n--- Quick KMC (U={args.U} V, {args.lattice_size}x"
               f"{args.lattice_size}, {args.steps} steps) ---")
-        from mykmc.engine import KMCEngine
+        from spark.engine import KMCEngine
 
         pt = build_kmc_model()
         engine = KMCEngine(pt, size=[args.lattice_size, args.lattice_size],

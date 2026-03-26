@@ -1,4 +1,4 @@
-# Leshen-KMC vs Zacros 4.0 功能对比报告
+# SPARK vs Zacros 4.0 功能对比报告
 
 > 生成日期: 2026-03-21
 
@@ -6,7 +6,7 @@
 
 ## 1. 总览
 
-| 维度 | Leshen-KMC | Zacros 4.0 |
+| 维度 | SPARK | Zacros 4.0 |
 |------|-----------|------------|
 | 语言 | Python + Rust | Fortran 90 |
 | 定位 | 电催化 KMC (N₂还原) | 通用表面催化 KMC |
@@ -22,7 +22,7 @@
 
 ### 2.1 晶格与表面模型
 
-| 特性 | Leshen-KMC | Zacros 4.0 | 差距等级 |
+| 特性 | SPARK | Zacros 4.0 | 差距等级 |
 |------|-----------|------------|---------|
 | 简单立方晶格 | ✅ | ✅ (rectangular_periodic) | — |
 | 三角晶格 | ❌ | ✅ triangular_periodic | **高** |
@@ -31,11 +31,11 @@
 | 显式图晶格 | ❌ | ✅ explicit | **低** |
 | 位点类型 | 单一类型 | 多种命名类型 (最多64字符) | **高** |
 | 周期性边界 | ✅ | ✅ | — |
-| 3D支持 | ✅ | ❌ (仅2D) | Leshen-KMC 优势 |
+| 3D支持 | ✅ | ❌ (仅2D) | SPARK 优势 |
 
 ### 2.2 物种与吸附物
 
-| 特性 | Leshen-KMC | Zacros 4.0 | 差距等级 |
+| 特性 | SPARK | Zacros 4.0 | 差距等级 |
 |------|-----------|------------|---------|
 | 表面物种 | ✅ 命名+整数编码 | ✅ 命名+整数编码 | — |
 | 气相物种 | ⚠️ 隐含在速率表达式中 | ✅ 显式定义 (摩尔分数/分子量/能量) | **中** |
@@ -44,7 +44,7 @@
 
 ### 2.3 反应机理
 
-| 特性 | Leshen-KMC | Zacros 4.0 | 差距等级 |
+| 特性 | SPARK | Zacros 4.0 | 差距等级 |
 |------|-----------|------------|---------|
 | 不可逆反应 | ✅ | ✅ | — |
 | 可逆反应 | ⚠️ 手动定义正/逆 | ✅ 自动配对 (reversible_step) | **中** |
@@ -57,33 +57,33 @@
 
 ### 2.4 速率计算
 
-| 特性 | Leshen-KMC | Zacros 4.0 | 差距等级 |
+| 特性 | SPARK | Zacros 4.0 | 差距等级 |
 |------|-----------|------------|---------|
 | Arrhenius | ✅ | ✅ | — |
 | TST (kBT/h) | ✅ | ✅ (通过前因子) | — |
 | Hertz-Knudsen 吸附 | ✅ | ✅ (压力×摩尔分数) | — |
-| Butler-Volmer 电化学 | ✅ | ❌ | Leshen-KMC 优势 |
+| Butler-Volmer 电化学 | ✅ | ❌ | SPARK 优势 |
 | 7参数温度依赖前因子 | ❌ | ✅ | **中** |
 | BEP关系 (proximity factor ω) | ❌ | ✅ Ea = Ea0 + ω(ΔE-ΔE0) | **高** |
 | 覆盖度依赖速率 | ❌ | ✅ (通过团簇展开) | **高** |
-| 字符串表达式求值 | ✅ (eval/递归下降解析) | ❌ (编译时确定) | Leshen-KMC 优势 |
-| DFT势能面插值 | ✅ (三次样条/二次拟合) | ❌ | Leshen-KMC 优势 |
+| 字符串表达式求值 | ✅ (eval/递归下降解析) | ❌ (编译时确定) | SPARK 优势 |
+| DFT势能面插值 | ✅ (三次样条/二次拟合) | ❌ | SPARK 优势 |
 
 ### 2.5 能量学
 
-| 特性 | Leshen-KMC | Zacros 4.0 | 差距等级 |
+| 特性 | SPARK | Zacros 4.0 | 差距等级 |
 |------|-----------|------------|---------|
 | 固定活化能 | ✅ | ✅ | — |
 | 团簇展开 | ❌ | ✅ 完整实现 | **关键** |
 | 侧向相互作用 | ❌ | ✅ (多体团簇) | **关键** |
 | 增量能量更新 | ❌ | ✅ globalenergy增量 | **高** |
 | CE拟合工具 | ❌ | ✅ ce_fit独立程序 | **高** |
-| 电位依赖活化能 | ✅ Ea(U) | ❌ | Leshen-KMC 优势 |
-| 极化曲线 | ✅ j-U曲线 | ❌ | Leshen-KMC 优势 |
+| 电位依赖活化能 | ✅ Ea(U) | ❌ | SPARK 优势 |
+| 极化曲线 | ✅ j-U曲线 | ❌ | SPARK 优势 |
 
 ### 2.6 KMC算法
 
-| 特性 | Leshen-KMC | Zacros 4.0 | 差距等级 |
+| 特性 | SPARK | Zacros 4.0 | 差距等级 |
 |------|-----------|------------|---------|
 | BKL/VSSM (直接法) | ✅ | ✅ (direct method) | — |
 | First Reaction Method | ❌ | ✅ (默认) | **中** |
@@ -97,32 +97,32 @@
 
 ### 2.7 模拟控制
 
-| 特性 | Leshen-KMC | Zacros 4.0 | 差距等级 |
+| 特性 | SPARK | Zacros 4.0 | 差距等级 |
 |------|-----------|------------|---------|
 | 恒温 | ✅ | ✅ | — |
 | 恒压 | ✅ | ✅ | — |
 | 温度程序升温 (TPD) | ❌ | ✅ T(t)=T0+ramp·t | **中** |
 | 最大步数/时间停止 | ✅ | ✅ | — |
 | 墙钟时间限制 | ❌ | ✅ | **低** |
-| 稳态检测 | ✅ 滑动窗口 | ❌ (需用户判断) | Leshen-KMC 优势 |
-| 参数运行时调整 | ✅ ParameterProxy | ❌ (编译时) | Leshen-KMC 优势 |
+| 稳态检测 | ✅ 滑动窗口 | ❌ (需用户判断) | SPARK 优势 |
+| 参数运行时调整 | ✅ ParameterProxy | ❌ (编译时) | SPARK 优势 |
 
 ### 2.8 输出与分析
 
-| 特性 | Leshen-KMC | Zacros 4.0 | 差距等级 |
+| 特性 | SPARK | Zacros 4.0 | 差距等级 |
 |------|-----------|------------|---------|
 | 覆盖度 | ✅ | ✅ specnum_output | — |
 | TOF | ✅ | ✅ (通过统计) | — |
 | 晶格快照 | ❌ | ✅ history_output | **中** |
 | 过程统计 | ✅ 执行计数 | ✅ procstat_output | — |
-| 选择性 | ✅ | ❌ (需后处理) | Leshen-KMC 优势 |
-| 表观活化能 | ✅ Arrhenius图 | ❌ (需后处理) | Leshen-KMC 优势 |
-| 速率控制度 (DRC) | ✅ Campbell方法 | ❌ | Leshen-KMC 优势 |
+| 选择性 | ✅ | ❌ (需后处理) | SPARK 优势 |
+| 表观活化能 | ✅ Arrhenius图 | ❌ (需后处理) | SPARK 优势 |
+| 速率控制度 (DRC) | ✅ Campbell方法 | ❌ | SPARK 优势 |
 | 灵活输出触发 | ❌ | ✅ (event/logtime/realtime) | **中** |
 
 ### 2.9 并行化
 
-| 特性 | Leshen-KMC | Zacros 4.0 | 差距等级 |
+| 特性 | SPARK | Zacros 4.0 | 差距等级 |
 |------|-----------|------------|---------|
 | MPI域分解 | ❌ | ✅ 2D笛卡尔分解 | **关键** |
 | OpenMP线程 | ❌ | ✅ threadprivate | **高** |
@@ -131,23 +131,23 @@
 
 ### 2.10 特殊功能
 
-| 特性 | Leshen-KMC | Zacros 4.0 | 差距等级 |
+| 特性 | SPARK | Zacros 4.0 | 差距等级 |
 |------|-----------|------------|---------|
 | 刚度缩放 (Stiffness scaling) | ❌ | ✅ 自动检测+缩放 | **高** |
 | 子图同构求解器 | ❌ | ✅ 6种算法 | **高** |
-| 微动力学 (MKM) + KMC双模式 | ✅ | ❌ | Leshen-KMC 优势 |
-| 电化学支持 | ✅ Butler-Volmer/PCET | ❌ | Leshen-KMC 优势 |
-| DFT能量导入 | ✅ JSON格式 | ❌ | Leshen-KMC 优势 |
-| 极化曲线计算 | ✅ | ❌ | Leshen-KMC 优势 |
-| 参数扫描 | ✅ (U扫描/T扫描) | ❌ (需外部脚本) | Leshen-KMC 优势 |
-| kmos兼容API | ✅ | ❌ | Leshen-KMC 优势 |
-| JSON模型序列化 | ✅ | ❌ | Leshen-KMC 优势 |
+| 微动力学 (MKM) + KMC双模式 | ✅ | ❌ | SPARK 优势 |
+| 电化学支持 | ✅ Butler-Volmer/PCET | ❌ | SPARK 优势 |
+| DFT能量导入 | ✅ JSON格式 | ❌ | SPARK 优势 |
+| 极化曲线计算 | ✅ | ❌ | SPARK 优势 |
+| 参数扫描 | ✅ (U扫描/T扫描) | ❌ (需外部脚本) | SPARK 优势 |
+| kmos兼容API | ✅ | ❌ | SPARK 优势 |
+| JSON模型序列化 | ✅ | ❌ | SPARK 优势 |
 | 验证框架 | ✅ CO/Pd Langmuir | ✅ 单元测试 | — |
 | Rust高性能引擎 | ✅ (~24x vs Python) | N/A (Fortran本身快) | — |
 
 ---
 
-## 3. Leshen-KMC 独有优势
+## 3. SPARK 独有优势
 
 1. **电化学KMC**: Butler-Volmer PCET速率、电位依赖活化能、极化曲线
 2. **MKM+KMC双模式**: 同一反应网络可用均场ODE或随机KMC求解
@@ -218,4 +218,4 @@
 
 ## 6. 结论
 
-Leshen-KMC在**电化学KMC**领域具有独特优势（Butler-Volmer速率、极化曲线、MKM双模式），这是Zacros 4.0不具备的。但在**通用表面催化KMC**方面，Leshen-KMC缺少三个关键特性：团簇展开能量学、多晶格类型、和多齿物种。补全这些特性将使Leshen-KMC成为兼具电化学特色和通用催化功能的KMC平台。
+SPARK在**电化学KMC**领域具有独特优势（Butler-Volmer速率、极化曲线、MKM双模式），这是Zacros 4.0不具备的。但在**通用表面催化KMC**方面，SPARK缺少三个关键特性：团簇展开能量学、多晶格类型、和多齿物种。补全这些特性将使SPARK成为兼具电化学特色和通用催化功能的KMC平台。

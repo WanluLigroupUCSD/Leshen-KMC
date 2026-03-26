@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 =============================================================================
-  mykmc 完整使用教程
+  spark 完整使用教程
   ——从零开始构建动力学蒙特卡洛与微观动力学模型
 =============================================================================
 
@@ -41,7 +41,7 @@ def part1_build_simple_model():
     print("=" * 70)
 
     # --- 步骤 1：导入必要模块 ---
-    from mykmc import (
+    from spark import (
         Project, Species, Site, Layer,
         Condition, Action, Parameter, Coord,
     )
@@ -140,8 +140,8 @@ def part2_run_kmc():
     print("  第2部分：运行 KMC 模拟")
     print("=" * 70)
 
-    from mykmc import KMCEngine
-    from mykmc.analysis import TrajectoryRecorder
+    from spark import KMCEngine
+    from spark.analysis import TrajectoryRecorder
 
     # --- 步骤 1：构建模型 ---
     pt = part1_build_simple_model()
@@ -229,8 +229,8 @@ def part3_parameter_adjustment():
     print("  第3部分：参数动态调节与 Langmuir 等温线验证")
     print("=" * 70)
 
-    from mykmc import KMCEngine
-    from mykmc.units import kB, eV
+    from spark import KMCEngine
+    from spark.units import kB, eV
 
     pt = _build_co_project()
 
@@ -318,7 +318,7 @@ def part4_complex_model():
     print("  第4部分：构建复杂反应网络 —— Mo 表面 N₂ 还原")
     print("=" * 70)
 
-    from mykmc import Project, Site, Condition, Action
+    from spark import Project, Site, Condition, Action
 
     pt = Project()
     pt.set_meta(model_name='N2_reduction_Mo', model_dimension=2)
@@ -467,8 +467,8 @@ def part5_microkinetic_ode():
     print("  第5部分：平均场微观动力学 ODE 求解")
     print("=" * 70)
 
-    from mykmc import MicroKineticModel
-    from mykmc.rates import tst_rate, electrochemical_rate, hertz_knudsen
+    from spark import MicroKineticModel
+    from spark.rates import tst_rate, electrochemical_rate, hertz_knudsen
 
     # --- 步骤 1：构建模型 ---
     mkm = MicroKineticModel()
@@ -719,8 +719,8 @@ def part7_visualization():
     matplotlib.use('Agg')  # 非交互式后端
     import matplotlib.pyplot as plt
 
-    from mykmc import KMCEngine
-    from mykmc.analysis import TrajectoryRecorder
+    from spark import KMCEngine
+    from spark.analysis import TrajectoryRecorder
     from models.n2_reduction_Mo import build_microkinetic_model
 
     # --- 图 1：KMC 覆盖度随时间演化 (CO 模型) ---
@@ -878,7 +878,7 @@ def part7_visualization():
 
 def _build_co_project():
     """快速构建 CO 模型（供多个部分复用）。"""
-    from mykmc import Project, Site, Condition, Action
+    from spark import Project, Site, Condition, Action
 
     pt = Project()
     pt.set_meta(model_name='CO_on_Pd100', model_dimension=2)
@@ -908,7 +908,7 @@ def _build_co_project():
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
-    parser = argparse.ArgumentParser(description='mykmc 完整使用教程')
+    parser = argparse.ArgumentParser(description='spark 完整使用教程')
     parser.add_argument('--part', type=int, default=0,
                         help='运行指定部分 (1-7)，默认运行全部')
     args = parser.parse_args()
@@ -932,7 +932,7 @@ def main():
             print(f"错误：没有第 {args.part} 部分，可选 1-7")
     else:
         print("\n" + "═" * 70)
-        print("  mykmc 完整使用教程 —— 运行全部 7 个部分")
+        print("  spark 完整使用教程 —— 运行全部 7 个部分")
         print("═" * 70)
         for num, (name, func) in parts.items():
             try:

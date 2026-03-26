@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HER on Pt(111) — Comprehensive Validation Suite for Leshen-KMC v0.3.0
+HER on Pt(111) — Comprehensive Validation Suite for SPARK v0.3.0
 
 Six tests per the research plan:
   Test 1: Langmuir limit (no lateral, Volmer-only)
@@ -31,12 +31,12 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from mykmc.types import Project, Site, Condition, Action, Coord
-from mykmc.engine import KMCEngine
-from mykmc.microkinetic import MicroKineticModel
-from mykmc.rates import tst_rate, electrochemical_rate
-from mykmc.units import kB, h, eV, e_charge
-from mykmc.polarization import tof_to_current_density
+from spark.types import Project, Site, Condition, Action, Coord
+from spark.engine import KMCEngine
+from spark.microkinetic import MicroKineticModel
+from spark.rates import tst_rate, electrochemical_rate
+from spark.units import kB, h, eV, e_charge
+from spark.polarization import tof_to_current_density
 
 # ============================================================================
 #  DFT Parameters (same as models/her_Pt111.py)
@@ -655,7 +655,7 @@ def main():
     tests_to_run = args.test if args.test else list(all_tests.keys())
 
     print("=" * 70)
-    print("  Leshen-KMC v0.3.0 — HER on Pt(111) Validation Suite")
+    print("  SPARK v0.3.0 — HER on Pt(111) Validation Suite")
     print("  " + time.strftime('%Y-%m-%d %H:%M:%S'))
     print("=" * 70)
     print(f"\n  Tests to run: {tests_to_run}")

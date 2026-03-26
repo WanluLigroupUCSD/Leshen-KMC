@@ -24,5 +24,5 @@ type: project
 
 **Performance:** Pure Python engine ~1500 steps/s. KMC 11-point polarization took ~13 min (20×20, 50k eq + 50k prod).
 
-**Why:** Validates Leshen-KMC for electrochemistry. The MKM/KMC divergence demonstrates the unique value of spatial KMC.
+**Why:** Validates SPARK for electrochemistry. The MKM/KMC divergence demonstrates the unique value of spatial KMC.
 **How to apply:** Use as reference for Phase 2. The validated model confirms Butler-Volmer, lateral, BEP implementations work correctly.

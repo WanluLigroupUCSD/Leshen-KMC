@@ -1,8 +1,50 @@
 {
-  "current_phase": "phase1_complete",
-  "current_task": "T5",
-  "status": "T1_T2_T3_T4_completed",
-  "progress": "5/11 tasks done",
-  "last_updated": "2026-03-21T20:50",
-  "note": "Phase 1 (HER Pt111) complete. T4: MKM j0=0.45 mA/cm2, Tafel=81 mV/dec. KMC vs MKM shows 2x coverage difference from lateral interactions — key validation of spatial KMC value. Next: T5 CO2RR parameters."
+  "current_phase": "phase2_dft_execution",
+  "current_task": "T6.0",
+  "status": "awaiting_user_dft_calculations",
+  "progress": "7/19 tasks done",
+  "last_updated": "2026-03-26T20:00",
+  "methodology": {
+    "decision": "D4 (2026-03-23)",
+    "surface": "Cu(100), p(4×4), 4层64Cu",
+    "k-points": "2×2×1 Γ-centered",
+    "smearing": "ISMEAR=0 (Gaussian), SIGMA=0.05",
+    "functional": "PBE + DFT-D3(BJ) (IVDW=12)",
+    "TS_search": "CI-NEB for all steps (thermal + PCET thermal analog)",
+    "barriers": "GC-DFT (VASPsol + variable charge + Ω(U) quadratic fit)",
+    "PCET_fallback": "BEP if CI-NEB fails (Ea=α×ΔG+Ea0, α≈0.5)"
+  },
+  "DFT_pipeline": [
+    "T6.0: Bulk + gas phase (9) ← START HERE",
+    "T6.1: Clean slab + 13 adsorbates (14)",
+    "T6.2: Tier 1 co-adsorption (8)",
+    "T6.3: Tier 2 co-adsorption (12)",
+    "T6.4: Extra NEB IS/FS (12)",
+    "T6b: CI-NEB all 14 reactions",
+    "T6c: Frequency calculations (30)",
+    "T6d: GC-DFT variable charge (210)"
+  ],
+  "next_actions": [
+    "用户准备T6.0结构: bulk Cu fcc + 8个气相分子 POSCAR",
+    "T6.0完成后进入T6.1: 建p(4×4) Cu(100) slab + 放置13种吸附物",
+    "T6.2-T6.4可在T6.1完成后并行进行"
+  ],
+  "side_tasks": {
+    "benchmark": {
+      "description": "HER on Pt(111) — KMC engine benchmark (SPARK vs kmos vs Zacros)",
+      "status": "COMPLETE",
+      "results": {
+        "SPARK": "DONE — θ_H~0.33, j matches MKM qualitatively, Heyrovsky dominant",
+        "Zacros": "DONE — excellent agreement with SPARK (θ_H and j match within noise)",
+        "kmos": "DONE — excellent agreement (θ_H and j match within stochastic noise). Fixed: export_source API (code_generator param), fortranobject.c linking, random_seed size, species case, occupation index"
+      },
+      "timing": {
+        "SPARK": "~280s (pure Python, no Fortran)",
+        "kmos": "~20s (Fortran via f2py)",
+        "Zacros": "~12s (compiled Fortran binary)"
+      },
+      "script": "benchmark/run_benchmark.py",
+      "output": "benchmark/fig_benchmark_comparison.png"
+    }
+  }
 }

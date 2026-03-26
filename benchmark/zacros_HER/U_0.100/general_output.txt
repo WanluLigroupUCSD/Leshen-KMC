@@ -1,0 +1,227 @@
++---------------------------------------------------+
+|  ZACROS 4.0                                       |
+|  GRAPH-THEORETICAL KMC SIMULATION CODE            |
+|                                                   |
+|  Multiscale Computational Catalysis and           |
+|  Materials Science Research Group                 |
+|                                                   |
+|  Michail Stamatakis, Ph.D.                        |
+|  Department of Chemistry                          |
+|  University of Oxford                             |
++---------------------------------------------------+
+
+Threading/multiprocessing information:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Serial run (no parallelism).
+
+Simulation setup:
+~~~~~~~~~~~~~~~~~
+
+    Random sequence with seed: 12345
+
+    Temperature: 298.00000000000000
+
+    Pressure: 1.0000000000000000
+
+    Number of gas species: 1
+
+    Gas species names: H2 
+
+    Gas species energies: 0.0000000000000000 
+
+    Gas species molecular weights: 2.0160000000000000 
+
+    Gas species molar fractions: 0.0000000000000000 
+
+    Number of surface species: 1
+
+    Surface species names: H* 
+
+    Surface species dentation:  1
+
+    Snapshots will be reported in file history_output.txt at every 5000 events
+
+    Process statistics will be reported in file procstat_output.txt at every 5000 events
+
+    Species numbers will be reported in file specnum_output.txt at every 500 events
+
+    Event reporting turned off
+
+    Maximum number of steps: 100000
+
+    Max simulated time: 1.7976931348623157E+308 (maximum allowed value)
+
+    Allowed walltime in seconds: 600
+
+    Keyword no_restart parsed. You will not be able to resume the simulation at a later time.
+
+    The default Mersenne Twister 19937 random number generator will be used for this simulation.
+
+    Initializing the random number generator took 2.6120000000000001E-005 seconds
+
+    The default first reaction method will be used for propagating the KMC state, with a binary heap for the event-queue
+
+    The default legacy-Zacros module will be used as a subgraph isomorphism solver for elementary events
+
+    The default legacy-Zacros module will be used as a subgraph isomorphism solver for energetic clusters
+
+    [Memory Management] Dynamic array sizes will be used during the simulation as per the default behavior.
+
+Finished reading simulation input.
+
+Lattice setup:
+~~~~~~~~~~~~~~
+
+    Parsing one of the default lattice structures.
+
+    Unit cell area: 7.7006249999999996
+
+    Unit cell tiling: 20 x 20
+
+    Lattice surface area: 3080.2500000000000
+
+    Number of lattice sites per cell: 1
+
+    Total number of lattice sites: 400
+
+    Number of site types: 1
+
+    Site type names and total number of sites of that type:
+      StTp1 (400)
+
+    Maximum coordination number: 4
+
+Finished reading lattice input.
+
+Energetics setup:
+~~~~~~~~~~~~~~~~~
+
+    Number of clusters: 2
+
+    Maximum number of sites involved in a cluster: 2
+
+    Clusters:
+
+        1. H_point:      Mult = 1      ECI = 0.0000000000000000        Entities:  H* 
+        2. HH_pair_1NN:  Mult = 2      ECI = 0.10000000000000001       Entities:  H* H*
+
+Finished reading energetics input.
+
+Mechanism setup:
+~~~~~~~~~~~~~~~~
+
+    Number of elementary steps: 4
+
+    Maximum number of sites involved in a step: 2
+
+    Reaction network:
+
+        1. Volmer_fwd:    A(Tini) =  6.2093E+12    Ea       =  0.62    k(Tini) =  2.0305E+02    Reaction: *(.)  ->  H*(.)
+        2. Volmer_rev:    A(Tini) =  6.2093E+12    Ea       =  0.67    k(Tini) =  2.8974E+01    Reaction: H*(.)  ->  *(.)
+        3. Tafel:         A(Tini) =  6.2093E+12    Ea       =  0.85    k(Tini) =  2.6173E-02    Reaction: H*(.)  +  H*(.)  ->  H2  +  *(.)  +  *(.)
+        4. Heyrovsky:     A(Tini) =  6.2093E+12    Ea       =  0.65    k(Tini) =  6.3132E+01    Reaction: H*(.)  ->  H2  +  *(.)
+
+    This mechanism contains up to two-site events involving only monodentate species (all of which have no geometric specifications).
+
+***************
+
+Warning code 4008 from mechanism_parser_module: this mechanism contains irreversible steps. DANGER: IRREVERSIBLE STEPS VIOLATE MICROSCOPIC REVERSIBILITY!
+Moreover, for such steps, Zacros treats the Bronsted-Evans-Polanyi relation as a purely mathematical relation and does not take any action if [activation energy] < max([reaction energy],0). 
+Use irreversible steps in mechanism_input.dat with caution, if you really know what you are doing!
+
+More information: 
+The following steps are irreversible:
+    1 : Volmer_fwd
+    2 : Volmer_rev
+    3 : Tafel
+    4 : Heyrovsky
+
+***************
+
+Finished reading mechanism input.
+
+Preparing simulation:
+~~~~~~~~~~~~~~~~~~~~~
+
+    Constructing requested lattice structure.
+
+        Lattice structure written to lattice_output.txt
+
+    Pre-allocating KMC-simulation-handling datastructures... done!
+
+    Pre-allocating lattice-handling datastructures... done!
+
+    Pre-allocating event-rate-handling datastructures... done!
+
+    Initializing lattice state.
+
+        All lattice sites are vacant.
+
+    Initializing energetics.
+
+        Total adlayer energy: 0.0000000000000000
+
+    Initializing lattice events.
+
+        400 lattice events found and stored in binary heap.
+
+Commencing simulation:
+~~~~~~~~~~~~~~~~~~~~~~
+
+Simulation stopped:
+~~~~~~~~~~~~~~~~~~~
+ Current KMC time: 3.70512223
+ Events occurred:  100000
+ Event frequency:  26989.6621
+
+Performance facts:
+~~~~~~~~~~~~~~~~~~
+
+Elapsed CPU time:         1.06584907 seconds
+Elapsed clock time:       1.07338238 seconds
+Setup clock time:         1.51593657E-02 seconds
+Simulation clock time:    1.05822301 seconds
+
+Simulation clock time per KMC event: 1.05822301E-05 seconds
+Simulation clock time per KMC time:  0.285610825 seconds/KMCTimeUnits
+
+Events per simulation clock hour:    340192931
+KMC Dt per simulation clock hour:    12604.5645 KMCTimeUnits
+
+Execution queue statistics:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Number of insertions:               171391
+Number of removals:                 170867
+Number of updates:                  421223
+
+Memory usage statistics:
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Used capacity of process queue:                     546
+       ...out of max-allocated:                    1600  (  34.13% utilization )
+       ...with cap of:                            20000
+
+Used capacity of process-participation list:         10
+       ...out of max-allocated:                      16  (  62.50% utilization )
+       ...with cap of:                              200
+
+Used capacity of cluster list:                      146
+       ...out of max-allocated:                    1600  (   9.13% utilization )
+       ...with cap of:                            20000
+
+Used capacity of cluster-participation list:          9
+       ...out of max-allocated:                      16  (  56.25% utilization )
+       ...with cap of:                               60
+
+Used capacity of largest temporary array:            12
+       ...out of max-allocated:                      23  (  52.17% utilization )
+       ...with cap of:                             1250
+
+Summary of warnings:
+~~~~~~~~~~~~~~~~~~~~
+
+Warning 4008 from mechanism_parser_module was triggered 1 time.
+
+> Normal termination <

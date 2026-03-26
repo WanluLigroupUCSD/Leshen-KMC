@@ -1,6 +1,6 @@
 # Memory Index
 
-- [project_kmc_dev.md](project_kmc_dev.md) - KMC project development: Leshen-KMC vs Zacros 4.0 feature comparison and development
+- [project_kmc_dev.md](project_kmc_dev.md) - KMC project development: SPARK vs Zacros 4.0 feature comparison and development
 - [user_environment.md](user_environment.md) - User environment: IBEX HPC, anaconda3 for scientific Python, communicates in Chinese
 - [project_autopilot_state.md](project_autopilot_state.md) - AutoPilot: Phase 1 complete (5/11 tasks), next T5 CO2RR parameters
 - [feedback_agent_rejection.md](feedback_agent_rejection.md) - User rejected Explore agent calls, may prefer direct Read approach

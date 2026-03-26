@@ -29,9 +29,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from mykmc.types import Project, Site, Layer, Condition, Action, Coord
-from mykmc.rates import tst_rate, electrochemical_rate, hertz_knudsen
-from mykmc.units import bar, angstrom, pi, umass, kB, eV
+from spark.types import Project, Site, Layer, Condition, Action, Coord
+from spark.rates import tst_rate, electrochemical_rate, hertz_knudsen
+from spark.units import bar, angstrom, pi, umass, kB, eV
 
 
 def build_kmc_model():
@@ -235,8 +235,8 @@ def build_microkinetic_model():
 
     Returns a MicroKineticModel object.
     """
-    from mykmc.microkinetic import MicroKineticModel
-    from mykmc.rates import tst_rate, electrochemical_rate
+    from spark.microkinetic import MicroKineticModel
+    from spark.rates import tst_rate, electrochemical_rate
 
     mkm = MicroKineticModel()
 
@@ -456,11 +456,11 @@ def build_dft_microkinetic_model(dft_data):
           }
         }
     """
-    from mykmc.polarization import (
+    from spark.polarization import (
         EnergyLandscape, PolarizationCurve, load_energy_data,
     )
-    from mykmc.microkinetic import MicroKineticModel
-    from mykmc.rates import tst_rate, hertz_knudsen
+    from spark.microkinetic import MicroKineticModel
+    from spark.rates import tst_rate, hertz_knudsen
 
     # Load data
     if isinstance(dft_data, str):

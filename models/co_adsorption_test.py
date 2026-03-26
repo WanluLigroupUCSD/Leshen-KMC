@@ -3,7 +3,7 @@
 Validation test: CO adsorption/desorption on Pd(100).
 
 Replicates the kmos tutorial "A First kMC Model" to verify
-that mykmc produces correct results.
+that spark produces correct results.
 
 Expected behavior:
   - At T=600K, deltaG=-0.5eV: surface mostly covered with CO
@@ -18,8 +18,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from mykmc import Project, Site, Condition, Action, KMCEngine
-from mykmc.units import kB, eV
+from spark import Project, Site, Condition, Action, KMCEngine
+from spark.units import kB, eV
 
 
 def build_co_model():

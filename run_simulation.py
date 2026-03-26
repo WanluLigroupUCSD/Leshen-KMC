@@ -24,10 +24,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 from models.n2_reduction_Mo import (
     build_kmc_model, build_microkinetic_model, build_dft_microkinetic_model,
 )
-from mykmc.engine import KMCEngine
-from mykmc.analysis import TrajectoryRecorder, run_to_steady_state
-from mykmc.rates import tst_rate, electrochemical_rate
-from mykmc.polarization import PolarizationCurve, compute_polarization_curve
+from spark.engine import KMCEngine
+from spark.analysis import TrajectoryRecorder, run_to_steady_state
+from spark.rates import tst_rate, electrochemical_rate
+from spark.polarization import PolarizationCurve, compute_polarization_curve
 
 
 def run_microkinetic(T=300.0, p_N2=1.0, U=-0.5):

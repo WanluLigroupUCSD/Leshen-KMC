@@ -27,10 +27,10 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from mykmc.microkinetic import MicroKineticModel
-from mykmc.rates import tst_rate, electrochemical_rate
-from mykmc.units import kB, h, eV, e_charge
-from mykmc.polarization import tof_to_current_density
+from spark.microkinetic import MicroKineticModel
+from spark.rates import tst_rate, electrochemical_rate
+from spark.units import kB, h, eV, e_charge
+from spark.polarization import tof_to_current_density
 
 # ============================================================================
 #  DFT Parameters
@@ -149,8 +149,8 @@ def compute_kmc_polarization(U_range, T=T_DEFAULT, lattice_size=20,
                               equil_steps=50000, prod_steps=50000,
                               with_lateral=True, verbose=True):
     """Compute KMC polarization curve (without diffusion for speed)."""
-    from mykmc.types import Project, Site, Condition, Action, Coord
-    from mykmc.engine import KMCEngine
+    from spark.types import Project, Site, Condition, Action, Coord
+    from spark.engine import KMCEngine
 
     U_range = np.asarray(U_range)
     results = {
@@ -507,7 +507,7 @@ def make_plots(mkm_results, kmc_results=None, outdir='results'):
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
 
-    fig5.suptitle('HER on Pt(111) — Leshen-KMC Validation (T4)', fontsize=15)
+    fig5.suptitle('HER on Pt(111) — SPARK Validation (T4)', fontsize=15)
     fig5.tight_layout(rect=[0, 0, 1, 0.96])
     fig5.savefig(os.path.join(outdir, 'fig_summary.png'))
     plt.close(fig5)
@@ -544,7 +544,7 @@ def main():
 
     print("=" * 65)
     print("  T4: HER on Pt(111) — Polarization Curves")
-    print("  Leshen-KMC Validation")
+    print("  SPARK Validation")
     print("=" * 65)
 
     # ---- 1. MKM Polarization ----

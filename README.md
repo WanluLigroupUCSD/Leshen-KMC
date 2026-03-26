@@ -1,14 +1,16 @@
-# KMC
+# SPARK
 
-**Kinetic Monte Carlo & Microkinetic Modeling for Heterogeneous Catalysis**
+**SPatial Atomistic Reaction Kinetics**
+
+Kinetic Monte Carlo & Microkinetic Modeling for Heterogeneous Catalysis
 
 动力学蒙特卡洛与微观动力学建模软件 —— 面向多相催化
 
 ---
 
-A dual-language (Python + Rust) toolkit for lattice Kinetic Monte Carlo (KMC) simulation and mean-field microkinetic modeling, designed for electrochemical N₂ reduction and general heterogeneous catalysis research. The Python package (`mykmc`) provides a flexible, research-friendly API with SciPy ODE solvers and polarization curve support, while the Rust binary (`mykmc-rs`) delivers high performance with Fenwick tree O(log N) site selection, Newton-Raphson steady-state solver, and zero-allocation coordinate handling.
+A dual-language (Python + Rust) toolkit for lattice Kinetic Monte Carlo (KMC) simulation and mean-field microkinetic modeling, designed for electrochemical N₂ reduction and general heterogeneous catalysis research. The Python package (`spark`) provides a flexible, research-friendly API with SciPy ODE solvers and polarization curve support, while the Rust binary (`spark-rs`) delivers high performance with Fenwick tree O(log N) site selection, Newton-Raphson steady-state solver, and zero-allocation coordinate handling.
 
-双语言（Python + Rust）工具包，用于晶格动力学蒙特卡洛（KMC）模拟与平均场微观动力学建模，适用于电化学氮还原及通用多相催化研究。Python 包（`mykmc`）提供灵活的研究接口，支持 SciPy ODE 求解器与极化曲线计算；Rust 二进制（`mykmc-rs`）通过 Fenwick 树 O(log N) 位点选择、Newton-Raphson 稳态求解器和零分配坐标处理实现高性能计算。
+双语言（Python + Rust）工具包，用于晶格动力学蒙特卡洛（KMC）模拟与平均场微观动力学建模，适用于电化学氮还原及通用多相催化研究。Python 包（`spark`）提供灵活的研究接口，支持 SciPy ODE 求解器与极化曲线计算；Rust 二进制（`spark-rs`）通过 Fenwick 树 O(log N) 位点选择、Newton-Raphson 稳态求解器和零分配坐标处理实现高性能计算。
 
 ## Table of Contents / 目录
 
@@ -53,7 +55,7 @@ A dual-language (Python + Rust) toolkit for lattice Kinetic Monte Carlo (KMC) si
 
 ```
 KMC/
-├── mykmc/                         # Python package / Python 包
+├── spark/                         # Python package / Python 包
 │   ├── __init__.py                # Public API exports / 公共 API 导出
 │   ├── engine.py                  # BKL KMC engine / KMC 引擎
 │   ├── microkinetic.py            # Mean-field ODE solver (scipy) / 平均场 ODE 求解器
@@ -62,7 +64,7 @@ KMC/
 │   ├── analysis.py                # Trajectory recording, TOF, steady-state / 分析工具
 │   ├── types.py                   # Data model: Project, Species, Process / 数据模型
 │   └── units.py                   # Physical constants (kB, h, eV, bar, ...) / 物理常数
-├── mykmc-rs/                      # Rust implementation / Rust 高性能实现
+├── spark-rs/                      # Rust implementation / Rust 高性能实现
 │   ├── src/
 │   │   ├── main.rs                # CLI entry point with clap / CLI 入口
 │   │   ├── engine.rs              # BKL KMC engine with O(1) bookkeeping / KMC 引擎
@@ -92,18 +94,18 @@ KMC/
 **Prerequisites / 前提条件：** Python ≥ 3.8, NumPy, SciPy
 
 ```bash
-git clone https://github.com/leshenzhang/KMC.git
+git clone https://github.com/WanluLigroupUCSD/SPARK.git
 cd KMC
 pip install numpy scipy
 ```
 
-No installation step needed — import `mykmc` directly from the project root:
+No installation step needed — import `spark` directly from the project root:
 
-无需安装步骤 —— 直接从项目根目录导入 `mykmc`：
+无需安装步骤 —— 直接从项目根目录导入 `spark`：
 
 ```python
 import sys; sys.path.insert(0, '/path/to/KMC')
-from mykmc import Project, KMCEngine, MicroKineticModel
+from spark import Project, KMCEngine, MicroKineticModel
 ```
 
 ### Rust / Rust 安装
@@ -120,13 +122,13 @@ source ~/.cargo/env
 ### Build / 编译
 
 ```bash
-cd KMC/mykmc-rs
+cd KMC/spark-rs
 cargo build --release
 ```
 
-The binary is at `mykmc-rs/target/release/mykmc`.
+The binary is at `spark-rs/target/release/spark`.
 
-编译后的可执行文件位于 `mykmc-rs/target/release/mykmc`。
+编译后的可执行文件位于 `spark-rs/target/release/spark`。
 
 ### HPC Note / 超算注意事项
 
@@ -189,27 +191,27 @@ python run_simulation.py --polarization --dft-data models/example_dft_energies.j
 ### Rust
 
 ```bash
-cd mykmc-rs
+cd spark-rs
 
 # Validate the installation (CO/Pd100 Langmuir isotherm test)
 # 验证安装（CO/Pd100 Langmuir 等温线测试）
-./target/release/mykmc validate
+./target/release/spark validate
 
 # Run mean-field microkinetic model for N₂ reduction
 # 运行 N₂ 还原平均场微观动力学模型
-./target/release/mykmc mkm --cycle --t 300 --u -1.0
+./target/release/spark mkm --cycle --t 300 --u -1.0
 
 # Run lattice KMC simulation
 # 运行晶格 KMC 模拟
-./target/release/mykmc kmc --cycle --t 300 --u -5.0 --size 20 --steps 500000
+./target/release/spark kmc --cycle --t 300 --u -5.0 --size 20 --steps 500000
 
 # Scan applied potential
 # 扫描施加电位
-./target/release/mykmc scan-u --cycle --t 300 --u-min -0.5 --u-max -3.0
+./target/release/spark scan-u --cycle --t 300 --u-min -0.5 --u-max -3.0
 
 # Scan temperature
 # 扫描温度
-./target/release/mykmc scan-t --cycle --u -1.0 --t-min 250 --t-max 500
+./target/release/spark scan-t --cycle --u -1.0 --t-min 250 --t-max 500
 ```
 
 ---
@@ -231,8 +233,8 @@ Includes adsorption, desorption, and all reaction steps. Supports empty sites on
 python run_simulation.py --T 300 --U -1.0
 
 # Rust
-./target/release/mykmc mkm --t 300 --u -1.0
-./target/release/mykmc kmc --t 300 --u -1.0 --size 20
+./target/release/spark mkm --t 300 --u -1.0
+./target/release/spark kmc --t 300 --u -1.0 --size 20
 ```
 
 - 11 species: empty, N₂, NNH, HNNH, NNH₂, HNNH₂, H₂NNH₂, N, NH, NH₂, NH₃
@@ -248,8 +250,8 @@ Pure chemical reaction steps only. No adsorption, desorption, migration, or surf
 
 ```bash
 # Rust
-./target/release/mykmc mkm --cycle --t 300 --u -1.0
-./target/release/mykmc kmc --cycle --t 300 --u -5.0 --size 20
+./target/release/spark mkm --cycle --t 300 --u -1.0
+./target/release/spark kmc --cycle --t 300 --u -5.0 --size 20
 ```
 
 - 9 species: N₂, NNH, HNNH, NNH₂, HNNH₂, H₂NNH₂, N, NH, NH₂
@@ -276,7 +278,7 @@ Pure chemical reaction steps only. No adsorption, desorption, migration, or surf
 #### 1. Define a model / 定义模型
 
 ```python
-from mykmc import Project, Site, Layer, Condition, Action
+from spark import Project, Site, Layer, Condition, Action
 import numpy as np
 
 pt = Project()
@@ -311,7 +313,7 @@ pt.add_process(
 #### 2. Run KMC simulation / 运行 KMC 模拟
 
 ```python
-from mykmc import KMCEngine, TrajectoryRecorder
+from spark import KMCEngine, TrajectoryRecorder
 
 engine = KMCEngine(pt, size=[20, 20], print_rates=True, banner=True)
 engine.parameters.T = 600.0
@@ -328,8 +330,8 @@ print(engine.get_tof())
 #### 3. Mean-field microkinetic model / 平均场微观动力学模型
 
 ```python
-from mykmc import MicroKineticModel
-from mykmc.rates import tst_rate, electrochemical_rate
+from spark import MicroKineticModel
+from spark.rates import tst_rate, electrochemical_rate
 
 mkm = MicroKineticModel()
 mkm.add_species('N2')
@@ -360,7 +362,7 @@ results = mkm.scan_parameter('U', np.linspace(-2, 0, 41), observable='NH3_produc
 #### 4. Polarization curve / 极化曲线
 
 ```python
-from mykmc.polarization import PolarizationCurve, EnergyLandscape, load_energy_data
+from spark.polarization import PolarizationCurve, EnergyLandscape, load_energy_data
 
 # Mode 1: Butler-Volmer model / 模式1：Butler-Volmer 模型
 pc = PolarizationCurve(mkm, n_electrons={'NH3_production': 3}, A_site=(3.2e-10)**2)
@@ -395,10 +397,10 @@ kB*T/h*exp(-(Ea_N2_to_NNH + beta_BV*U)*eV/(kB*T))
 
 ## Rust Command Reference / Rust 命令参考
 
-### `mykmc kmc` — Lattice KMC Simulation / 晶格 KMC 模拟
+### `spark kmc` — Lattice KMC Simulation / 晶格 KMC 模拟
 
 ```
-mykmc kmc [OPTIONS]
+spark kmc [OPTIONS]
 
 Options:
   --t <T>          Temperature [K] (default: 300) / 温度
@@ -413,16 +415,16 @@ Options:
 
 ```bash
 # Full model, 30×30 lattice, 2 million steps
-./target/release/mykmc kmc --t 300 --u -1.0 --size 30 --steps 2000000
+./target/release/spark kmc --t 300 --u -1.0 --size 30 --steps 2000000
 
 # Cycle mode, compact lattice
-./target/release/mykmc kmc --cycle --t 300 --u -5.0 --size 15 --steps 500000
+./target/release/spark kmc --cycle --t 300 --u -5.0 --size 15 --steps 500000
 ```
 
-### `mykmc mkm` — Mean-Field Microkinetic Model / 平均场微观动力学
+### `spark mkm` — Mean-Field Microkinetic Model / 平均场微观动力学
 
 ```
-mykmc mkm [OPTIONS]
+spark mkm [OPTIONS]
 
 Options:
   --t <T>        Temperature [K] (default: 300)
@@ -434,7 +436,7 @@ Options:
 **Example / 示例：**
 
 ```bash
-./target/release/mykmc mkm --cycle --t 300 --u -1.5
+./target/release/spark mkm --cycle --t 300 --u -1.5
 ```
 
 **Output includes / 输出包含：**
@@ -442,10 +444,10 @@ Options:
 - Turn-over frequencies (TOF) / 转化频率
 - Parameter summary / 参数摘要
 
-### `mykmc scan-u` — Potential Scan / 电位扫描
+### `spark scan-u` — Potential Scan / 电位扫描
 
 ```
-mykmc scan-u [OPTIONS]
+spark scan-u [OPTIONS]
 
 Options:
   --t <T>              Temperature [K] (default: 300)
@@ -458,13 +460,13 @@ Options:
 **Example / 示例：**
 
 ```bash
-./target/release/mykmc scan-u --cycle --t 300 --u-min -0.5 --u-max -3.0 --u-steps 51
+./target/release/spark scan-u --cycle --t 300 --u-min -0.5 --u-max -3.0 --u-steps 51
 ```
 
-### `mykmc scan-t` — Temperature Scan / 温度扫描
+### `spark scan-t` — Temperature Scan / 温度扫描
 
 ```
-mykmc scan-t [OPTIONS]
+spark scan-t [OPTIONS]
 
 Options:
   --u <U>              Applied potential [V] (default: -1)
@@ -474,24 +476,24 @@ Options:
   --cycle              Use cycle mode
 ```
 
-### `mykmc validate` — Validation Test / 验证测试
+### `spark validate` — Validation Test / 验证测试
 
 Runs CO adsorption/desorption on Pd(100) and compares KMC results with the analytical Langmuir isotherm at 5 different free energies.
 
 运行 CO/Pd(100) 吸附脱附模拟，在 5 个不同自由能下与解析 Langmuir 等温线对比。
 
 ```bash
-./target/release/mykmc validate
+./target/release/spark validate
 ```
 
-### `mykmc polarization` — Polarization Curve from DFT / DFT 极化曲线
+### `spark polarization` — Polarization Curve from DFT / DFT 极化曲线
 
 Compute electrochemical polarization curve (current density vs. potential) directly from constant-potential DFT data. Uses cubic spline interpolation for potential-dependent barriers and steady-state continuation for robust convergence.
 
 从恒电位 DFT 数据直接计算电化学极化曲线（电流密度 vs. 电位）。使用三次样条插值处理电位依赖的能垒，稳态延续法确保收敛稳定性。
 
 ```
-mykmc polarization [OPTIONS]
+spark polarization [OPTIONS]
 
 Options:
   --dft-data <PATH>    Path to DFT energy JSON file (required) / DFT 能量 JSON 文件路径
@@ -507,10 +509,10 @@ Options:
 
 ```bash
 # Compute polarization curve from DFT data
-./target/release/mykmc polarization --dft-data models/example_dft_energies.json --t 300 --u-min -2.0 --u-max 0.0 --u-steps 100
+./target/release/spark polarization --dft-data models/example_dft_energies.json --t 300 --u-min -2.0 --u-max 0.0 --u-steps 100
 
 # Custom output file
-./target/release/mykmc polarization --dft-data my_dft.json --output my_curve.dat
+./target/release/spark polarization --dft-data my_dft.json --output my_curve.dat
 ```
 
 **DFT JSON format / DFT JSON 格式：**
@@ -675,10 +677,10 @@ PCET 步骤遵循 Butler-Volmer 动力学，热反应步骤（N-N 断键）不�
 
 ## Architecture / 代码架构
 
-### Python (`mykmc/`)
+### Python (`spark/`)
 
 ```
-mykmc/
+spark/
 ├── __init__.py          Public API: Project, KMCEngine, MicroKineticModel, ...
 ├── types.py             Data model: Project, Species, Site, Layer, Process, Condition, Action
 ├── engine.py            BKL KMC engine with rejection-free algorithm
@@ -689,7 +691,7 @@ mykmc/
 └── units.py             Physical constants: kB, h, eV, bar, angstrom, umass, ...
 ```
 
-### Rust (`mykmc-rs/src/`)
+### Rust (`spark-rs/src/`)
 
 ```
 src/
@@ -746,7 +748,7 @@ The KMC engine is validated against the analytical Langmuir isotherm for CO adso
 KMC 引擎通过 CO/Pd(100) 吸附脱附与解析 Langmuir 等温线对比验证：
 
 ```
-$ ./target/release/mykmc validate
+$ ./target/release/spark validate
 
 T=600 K, p_CO=1 bar, 30x30 lattice
 
@@ -802,7 +804,7 @@ If you use this software in your research, please cite:
 
 ```
 KMC: Kinetic Monte Carlo & Microkinetic Modeling for Heterogeneous Catalysis
-https://github.com/leshenzhang/KMC
+https://github.com/WanluLigroupUCSD/SPARK
 ```
 
 ---

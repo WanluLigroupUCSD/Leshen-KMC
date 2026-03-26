@@ -1,6 +1,6 @@
-# Leshen-KMC 与现有动力学蒙特卡洛软件的系统对比分析
+# SPARK 与现有动力学蒙特卡洛软件的系统对比分析
 
-**Leshen-KMC: Kinetic Monte Carlo & Microkinetic Modeling for Heterogeneous Electrocatalysis**
+**SPARK: Kinetic Monte Carlo & Microkinetic Modeling for Heterogeneous Electrocatalysis**
 
 *Wanlu Li Group, UC San Diego*
 
@@ -19,9 +19,9 @@
 | **KMCLib** | Leetmaa, Skorodumova | Python + C++ | GPL | 2014 | 通用格点扩散/反应 |
 | **MoCKA** | KIT (Deutschmann) | — | — | 2015 | 纳米颗粒催化 |
 | **MonteCoffee** | Chalmers (Grönbeck) | Python | MIT | 2018 | 纳米颗粒催化 |
-| **Leshen-KMC** | UCSD (Wanlu Li) | Python + Rust | MIT | 2025 | **电催化（唯一）** |
+| **SPARK** | UCSD (Wanlu Li) | Python + Rust | MIT | 2025 | **电催化（唯一）** |
 
-**关键事实：上述所有软件（除 Leshen-KMC 外）均为热催化设计，没有任何一个原生支持电催化功能。**
+**关键事实：上述所有软件（除 SPARK 外）均为热催化设计，没有任何一个原生支持电催化功能。**
 
 ---
 
@@ -31,7 +31,7 @@
 
 | 软件 | 算法 | 事件选择复杂度 | 拒绝率 |
 |------|------|---------------|--------|
-| **Leshen-KMC** | BKL / VSSM (Variable Step-Size Method) | O(log N_proc) binary search | 零拒绝（rejection-free） |
+| **SPARK** | BKL / VSSM (Variable Step-Size Method) | O(log N_proc) binary search | 零拒绝（rejection-free） |
 | **Zacros** | FRM (First Reaction Method) | O(N_events) 或优化后更低 | 零拒绝 |
 | **kmos3** | Direct Method (BKL/Gillespie) | O(1)（编译期生成优化代码） | 零拒绝 |
 | **SPPARKS** | 多种可选（VSSM, null-event, rejection-free） | O(1) ~ O(N log N) | 取决于算法 |
@@ -40,17 +40,17 @@
 
 **分析：**
 
-- Leshen-KMC 采用 BKL/VSSM 算法，与 kmos 同族。核心区别在于实现方式：kmos 在"导出"（export）阶段根据具体模型编译生成优化的 Fortran 代码，使得运行时局部更新达到 O(1)——即运行时间与格点大小完全无关。Leshen-KMC 使用通用引擎（Python/Rust），通过 swap-with-last 技巧实现 O(1) 的位点增删操作，过程选择通过二分搜索完成，复杂度为 O(log N_proc)。对于催化反应（通常 N_proc ≤ 20），这个差异可以忽略。
+- SPARK 采用 BKL/VSSM 算法，与 kmos 同族。核心区别在于实现方式：kmos 在"导出"（export）阶段根据具体模型编译生成优化的 Fortran 代码，使得运行时局部更新达到 O(1)——即运行时间与格点大小完全无关。SPARK 使用通用引擎（Python/Rust），通过 swap-with-last 技巧实现 O(1) 的位点增删操作，过程选择通过二分搜索完成，复杂度为 O(log N_proc)。对于催化反应（通常 N_proc ≤ 20），这个差异可以忽略。
 
 - Zacros 的 FRM 为每个可行事件独立生成发生时间，选取最早者执行。对于事件频繁增删的复杂系统（如含多齿物种和长程横向相互作用），FRM 的优势更明显。
 
-- **Leshen-KMC 的独特之处：Rust 高性能后端。** 所有现有 KMC 软件的性能瓶颈后端都是 Fortran 或 C++，Leshen-KMC 是第一个提供 Rust 实现的 KMC 框架，实测比 Python 版本加速约 24 倍，且编译产物仅 1.3 MB，无外部依赖。
+- **SPARK 的独特之处：Rust 高性能后端。** 所有现有 KMC 软件的性能瓶颈后端都是 Fortran 或 C++，SPARK 是第一个提供 Rust 实现的 KMC 框架，实测比 Python 版本加速约 24 倍，且编译产物仅 1.3 MB，无外部依赖。
 
 ### 2.2 格点表示与事件匹配
 
 | 软件 | 格点类型 | 事件匹配方法 | 空间关联性 |
 |------|---------|-------------|-----------|
-| **Leshen-KMC** | 均匀格点（well-mixed） | 直接查表 | ✗ 无 |
+| **SPARK** | 均匀格点（well-mixed） | 直接查表 | ✗ 无 |
 | **Zacros** | 任意拓扑格点（图表示） | 子图同构匹配（VF2/RI 算法） | ✅ 完整空间关联 |
 | **kmos3** | 周期性格点（1D-3D） | 编译期代码生成 | ✅ 邻居依赖事件 |
 | **SPPARKS** | 格点 + 非格点 | 用户自定义 | ✅ 空间分解 |
@@ -61,13 +61,13 @@
 
 Zacros 的 Graph-Theoretical（GT）方法是该领域最先进的事件匹配框架：将格点和基元步骤都表示为图（graph），通过子图同构问题的求解来自动识别格点上所有可行事件。这使其能天然处理多齿物种（如 CO* 占据 bridge 位需两个相邻位点）、复杂邻居模式（如要求反应物 A* 和 B* 相邻且第三邻位为空）等情况。
 
-**Leshen-KMC 目前使用 well-mixed 格点模型，即每个位点独立选择过程，不考虑邻居状态。** 这是一个重要的简化假设——等价于假设表面扩散无限快（mean-field 极限）。对于覆盖度主导的体系，这个近似合理；对于岛形成、pattern formation、扩散限制等现象，则无法捕捉。
+**SPARK 目前使用 well-mixed 格点模型，即每个位点独立选择过程，不考虑邻居状态。** 这是一个重要的简化假设——等价于假设表面扩散无限快（mean-field 极限）。对于覆盖度主导的体系，这个近似合理；对于岛形成、pattern formation、扩散限制等现象，则无法捕捉。
 
 ### 2.3 平均场微动力学（MKM）求解器
 
 | 软件 | 内置 MKM | ODE 求解器 | 稳态求解 |
 |------|---------|-----------|---------|
-| **Leshen-KMC** | ✅ 内置（核心功能） | SciPy solve_ivp（Python）, RK4+自适应 Euler（Rust） | fsolve（Python）, 自适应步长收敛（Rust） |
+| **SPARK** | ✅ 内置（核心功能） | SciPy solve_ivp（Python）, RK4+自适应 Euler（Rust） | fsolve（Python）, 自适应步长收敛（Rust） |
 | **Zacros** | ✗（需外部 MKMCXX） | — | — |
 | **kmos3** | ✗（需外部 CatMAP） | — | — |
 | **SPPARKS** | ✗ | — | — |
@@ -76,9 +76,9 @@ Zacros 的 Graph-Theoretical（GT）方法是该领域最先进的事件匹配�
 
 **分析：**
 
-**这是 Leshen-KMC 的核心差异化优势之一。** 所有现有 KMC 软件都是纯 KMC 引擎，要进行平均场微动力学分析需要：(1) 将反应模型手动转换到 CatMAP 或 MKMCXX 的格式，(2) 分别运行两个独立软件，(3) 手动对比结果。
+**这是 SPARK 的核心差异化优势之一。** 所有现有 KMC 软件都是纯 KMC 引擎，要进行平均场微动力学分析需要：(1) 将反应模型手动转换到 CatMAP 或 MKMCXX 的格式，(2) 分别运行两个独立软件，(3) 手动对比结果。
 
-Leshen-KMC 将 MKM 和 KMC 集成在同一框架内，使用完全相同的反应模型定义（Species, Process, rate expressions）。用户可以对同一个模型：
+SPARK 将 MKM 和 KMC 集成在同一框架内，使用完全相同的反应模型定义（Species, Process, rate expressions）。用户可以对同一个模型：
 - 运行 MKM 快速获得稳态覆盖度和 TOF
 - 运行 KMC 获得随机动力学和时间演化
 - 直接对比两者结果验证 mean-field 近似的有效性
@@ -91,7 +91,7 @@ Leshen-KMC 将 MKM 和 KMC 集成在同一框架内，使用完全相同的反�
 
 ### 3.1 电催化功能（核心差异化）
 
-| 电催化功能 | **Leshen-KMC** | Zacros | kmos3 | SPPARKS | KMCLib | MonteCoffee |
+| 电催化功能 | **SPARK** | Zacros | kmos3 | SPPARKS | KMCLib | MonteCoffee |
 |-----------|:-----------:|:------:|:-----:|:-------:|:-----:|:-----------:|
 | 电位依赖速率常数（PCET） | ✅ Butler-Volmer 原生 | ✗ | ✗ | ✗ | ✗ | ✗ |
 | 极化曲线输出（j-V） | ✅ 直接计算 | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -105,7 +105,7 @@ Leshen-KMC 将 MKM 和 KMC 集成在同一框架内，使用完全相同的反�
 
 **(1) Butler-Volmer PCET 速率**
 
-Leshen-KMC 原生区分质子耦合电子转移（PCET）步骤和纯热化学步骤。对于 PCET 步骤：
+SPARK 原生区分质子耦合电子转移（PCET）步骤和纯热化学步骤。对于 PCET 步骤：
 
 ```
 k(U) = (kB·T/h) · exp(−(Ea + β_BV·U) · eV / (kB·T))
@@ -121,7 +121,7 @@ k = (kB·T/h) · exp(−Ea · eV / (kB·T))
 
 **(2) 极化曲线直接输出**
 
-Leshen-KMC 提供两种模式计算极化曲线：
+SPARK 提供两种模式计算极化曲线：
 
 - **模式 1（Butler-Volmer）：** 使用 MKM 或 KMC 在不同电位下运行，获得 TOF，通过 j = TOF × n_e × e × N_site / A_geo 转换为电流密度。
 - **模式 2（DFT 恒电位数据）：** 输入多个电位下的 DFT 态能量和过渡态能量（JSON 格式），用三次样条自动插值出任意电位下的能垒，再运行 MKM 获得 j-V 曲线。
@@ -130,11 +130,11 @@ Leshen-KMC 提供两种模式计算极化曲线：
 
 **(3) 电化学/热反应步骤分类**
 
-在 NRR 反应网络中，N₂* → NNH* 是 PCET 步（速率与电位相关），而 NNH₂* → N* + NH₃ 是纯热步（N-N 键断裂，速率与电位无关）。Leshen-KMC 的模型定义中明确标记每个步骤的类型，引擎自动应用正确的速率表达式。
+在 NRR 反应网络中，N₂* → NNH* 是 PCET 步（速率与电位相关），而 NNH₂* → N* + NH₃ 是纯热步（N-N 键断裂，速率与电位无关）。SPARK 的模型定义中明确标记每个步骤的类型，引擎自动应用正确的速率表达式。
 
 ### 3.2 反应模型定义与灵活性
 
-| 功能 | **Leshen-KMC** | Zacros | kmos3 | MonteCoffee |
+| 功能 | **SPARK** | Zacros | kmos3 | MonteCoffee |
 |------|:-----------:|:------:|:-----:|:-----------:|
 | 速率表达式解析器 | ✅ 字符串表达式，运行时解析 | ✗（keyword 文件） | ✅ 类似语法 | ✗（用户代码） |
 | kmos 兼容 API | ✅ Project/Species/Process/Condition/Action | — | 原生 | — |
@@ -146,7 +146,7 @@ Leshen-KMC 提供两种模式计算极化曲线：
 
 **分析：**
 
-Leshen-KMC 采用了与 kmos 兼容的 API 概念（Project, Species, Site, Layer, Process, Condition, Action），降低了已有 kmos 用户的学习成本。
+SPARK 采用了与 kmos 兼容的 API 概念（Project, Species, Site, Layer, Process, Condition, Action），降低了已有 kmos 用户的学习成本。
 
 JSON 模型 I/O 是一个实用创新——模型可以在 Python 和 Rust 之间无缝共享，也便于版本控制和与其他工具集成。Zacros 使用自定义 keyword 文件格式，kmos 使用 .ini 或 .xml，均不如 JSON 通用。
 
@@ -154,7 +154,7 @@ JSON 模型 I/O 是一个实用创新——模型可以在 Python 和 Rust 之�
 
 ### 3.3 表面物理与横向相互作用
 
-| 功能 | **Leshen-KMC** | Zacros | kmos3 | SPPARKS | MonteCoffee |
+| 功能 | **SPARK** | Zacros | kmos3 | SPPARKS | MonteCoffee |
 |------|:-----------:|:------:|:-----:|:-------:|:-----------:|
 | Cluster Expansion Hamiltonian | ✗ | ✅ 多体项 | 有限 | ✗ | ✗ |
 | BEP 关系（on-the-fly） | ✗ | ✅ | ✅ OTF 后端 | ✗ | 用户代码 |
@@ -164,11 +164,11 @@ JSON 模型 I/O 是一个实用创新——模型可以在 Python 和 Rust 之�
 | 空间关联/岛形成 | ✗ | ✅ | ✅ | ✅ | ✅ |
 | 纳米颗粒多面 | ✗ | 需自定义格点 | ✗ | 部分 | ✅（CN-based） |
 
-**这是 Leshen-KMC 当前最大的局限。** 横向相互作用和空间关联效应对于高覆盖度体系（如 CO₂RR 中的高 CO* 覆盖度）至关重要。Zacros 的 Cluster Expansion Hamiltonian 可以系统地处理多体相互作用对吸附能和活化能的影响，而 Leshen-KMC 的 well-mixed 格点模型隐含假设吸附物间无相互作用、扩散无限快。
+**这是 SPARK 当前最大的局限。** 横向相互作用和空间关联效应对于高覆盖度体系（如 CO₂RR 中的高 CO* 覆盖度）至关重要。Zacros 的 Cluster Expansion Hamiltonian 可以系统地处理多体相互作用对吸附能和活化能的影响，而 SPARK 的 well-mixed 格点模型隐含假设吸附物间无相互作用、扩散无限快。
 
 ### 3.4 模拟分析工具
 
-| 功能 | **Leshen-KMC** | Zacros | kmos3 | MonteCoffee |
+| 功能 | **SPARK** | Zacros | kmos3 | MonteCoffee |
 |------|:-----------:|:------:|:-----:|:-----------:|
 | 覆盖度统计 | ✅ | ✅ | ✅ | ✅ |
 | TOF 计算 | ✅ | ✅ | ✅ | ✅ |
@@ -182,7 +182,7 @@ JSON 模型 I/O 是一个实用创新——模型可以在 Python 和 Rust 之�
 
 ### 3.5 性能与可扩展性
 
-| 特征 | **Leshen-KMC** | Zacros | kmos3 | SPPARKS | KMCLib |
+| 特征 | **SPARK** | Zacros | kmos3 | SPPARKS | KMCLib |
 |------|:-----------:|:------:|:-----:|:-------:|:-----:|
 | 分布式并行 (MPI) | ✗ | ✅ Time-Warp | ✗ | ✅ 空间分解 | ✅ |
 | 多线程 | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -193,11 +193,11 @@ JSON 模型 I/O 是一个实用创新——模型可以在 Python 和 Rust 之�
 
 ---
 
-## 4. Leshen-KMC 的核心优势总结
+## 4. SPARK 的核心优势总结
 
 ### 优势 1：首个面向电催化的通用 KMC 框架
 
-这是 Leshen-KMC 最重要的差异化特征。所有现有通用 KMC 软件都是为热催化设计的，要做电催化 KMC 需要：(a) 自行编写电位依赖的速率函数，(b) 手动在不同电位下扫描运行，(c) 自行编写 TOF 到电流密度的转换。Leshen-KMC 将这些作为一等公民内置，提供从 DFT 数据到极化曲线的一站式工作流。
+这是 SPARK 最重要的差异化特征。所有现有通用 KMC 软件都是为热催化设计的，要做电催化 KMC 需要：(a) 自行编写电位依赖的速率函数，(b) 手动在不同电位下扫描运行，(c) 自行编写 TOF 到电流密度的转换。SPARK 将这些作为一等公民内置，提供从 DFT 数据到极化曲线的一站式工作流。
 
 ### 优势 2：KMC + MKM 同框对比
 
@@ -225,11 +225,11 @@ Python 层提供灵活的研究接口和丰富的科学计算生态（NumPy, Sci
 
 ---
 
-## 5. Leshen-KMC 的不足与未来发展方向
+## 5. SPARK 的不足与未来发展方向
 
 ### 不足 1：缺乏空间关联效应（最关键）
 
-**现状：** Leshen-KMC 使用 well-mixed 格点模型，每个位点独立选择过程，不考虑邻居状态。这等价于 mean-field 近似在空间维度上的退化。
+**现状：** SPARK 使用 well-mixed 格点模型，每个位点独立选择过程，不考虑邻居状态。这等价于 mean-field 近似在空间维度上的退化。
 
 **影响：** 无法捕捉以下重要物理现象：
 - 吸附物岛状聚集（island formation）
@@ -308,7 +308,7 @@ Python 层提供灵活的研究接口和丰富的科学计算生态（NumPy, Sci
 ```
          电催化支持
            ↑
-      高   │  ★ Leshen-KMC     （唯一占据此象限）
+      高   │  ★ SPARK     （唯一占据此象限）
            │
            │
            │
@@ -318,14 +318,14 @@ Python 层提供灵活的研究接口和丰富的科学计算生态（NumPy, Sci
                      表面物理模型复杂度
 ```
 
-Leshen-KMC 填补的是「电催化 + KMC」这个交叉领域的工具空白。现有软件在热催化格点 KMC 方面更加成熟（尤其是 Zacros 和 kmos），但在电催化方向没有通用工具。Leshen-KMC 的战略定位是成为**电催化 KMC 的默认选择**，同时逐步补齐空间关联和横向相互作用等表面物理功能。
+SPARK 填补的是「电催化 + KMC」这个交叉领域的工具空白。现有软件在热催化格点 KMC 方面更加成熟（尤其是 Zacros 和 kmos），但在电催化方向没有通用工具。SPARK 的战略定位是成为**电催化 KMC 的默认选择**，同时逐步补齐空间关联和横向相互作用等表面物理功能。
 
 ---
 
 ## 7. 主要参考文献
 
-### Leshen-KMC
-- GitHub: https://github.com/WanluLigroupUCSD/Leshen-KMC
+### SPARK
+- GitHub: https://github.com/WanluLigroupUCSD/SPARK
 
 ### Zacros
 - Stamatakis & Vlachos, J. Chem. Phys. 134, 214115 (2011). DOI: 10.1063/1.3596751

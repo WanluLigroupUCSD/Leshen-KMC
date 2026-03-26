@@ -1,4 +1,4 @@
-# 参考软件源码深度分析 —— Leshen-KMC 功能移植指南
+# 参考软件源码深度分析 —— SPARK 功能移植指南
 
 > 分析日期: 2026-03-21
 > 已分析软件: MonteCoffee, kmos3/kmcos, KMCLib, SPPARKS, Zacros 4.0
@@ -157,7 +157,7 @@ type[i] = FCC / OCTA / TETRA  # 每个位点一个整数标签
 # 反应匹配时检查: if (type[i] != required_type) continue;
 ```
 
-**Leshen-KMC 移植方案:**
+**SPARK 移植方案:**
 ```rust
 struct Site {
     site_type: u16,       // 0=top, 1=bridge, 2=hollow, ...
@@ -309,7 +309,7 @@ class BEPRelation:
 5. k_new = k_base * exp(-ΔEa / kBT)
 ```
 
-**注意:** kmos3 的 OTF 后端与 BEP 不兼容 (因为OTF只知道反应物态的bystander，不知产物态)。Leshen-KMC 可以解决这个问题，因为 action_list 已知，产物态的bystander配置可以推断。
+**注意:** kmos3 的 OTF 后端与 BEP 不兼容 (因为OTF只知道反应物态的bystander，不知产物态)。SPARK 可以解决这个问题，因为 action_list 已知，产物态的bystander配置可以推断。
 
 ---
 
@@ -364,7 +364,7 @@ Zacros 每3600秒写 `restart.inf`，包含完整状态:
 - 事件队列
 - 统计数据
 
-**Leshen-KMC 方案:** JSON序列化 (已有基础设施)
+**SPARK 方案:** JSON序列化 (已有基础设施)
 ```json
 {
   "time": 1.23e-5,
@@ -400,7 +400,7 @@ dt_kmc = nstop / pmax_avg  (自适应)
 
 ---
 
-## 3. Leshen-KMC 现有代码的改动点
+## 3. SPARK 现有代码的改动点
 
 ### engine.py / engine.rs 改动
 

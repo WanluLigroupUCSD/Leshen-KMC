@@ -13,15 +13,15 @@
       "status": "completed",
       "completed_at": "2026-03-21",
       "depends_on": ["T1"],
-      "note": "Python KMC + MKM done, verified. Rust pending user DFT data."
+      "note": "Python KMC + MKM done. Rust engine done. models/her_Pt111.py, spark/engine.py, spark-rs/src/engine.rs"
     },
     {
       "id": "T3",
-      "description": "Phase 1: Run HER validation (Langmuir, Tafel slope, lateral, diffusion, KMC vs MKM, lattice convergence)",
+      "description": "Phase 1: Run HER validation (6 tests)",
       "status": "completed",
       "completed_at": "2026-03-21",
       "depends_on": ["T2"],
-      "note": "All 6 tests PASSED. validate_her.py created. Pure Python ~1500 steps/s."
+      "note": "All 6 tests PASSED. validate_her.py (26KB). Pure Python ~1500 steps/s."
     },
     {
       "id": "T4",
@@ -29,51 +29,350 @@
       "status": "completed",
       "completed_at": "2026-03-21",
       "depends_on": ["T3"],
-      "note": "MKM 101pts + KMC 11pts. j0=0.45 mA/cm2, Tafel=81 mV/dec, Heyrovsky-dominant. KMC theta_H ~0.33 vs MKM ~0.76. run_polarization_her.py + results/ dir."
+      "note": "MKM 101pts + KMC 11pts. j0=0.45 mA/cm², Tafel=81 mV/dec."
     },
     {
       "id": "T5",
-      "description": "Phase 2: Collect DFT parameters for CO2RR on Cu(100) from Wei 2025, Montoya 2015, Norskov",
-      "status": "pending",
+      "description": "Phase 2: Research — 调研反应体系、横向相互作用、多产物KMC方法论",
+      "status": "completed",
+      "completed_at": "2026-03-22",
+      "depends_on": [],
+      "note": "6项并行调研（40+文献）。最终确认NO₃RR on Cu。文档合并至 docs/research_plan_NO3RR.md"
+    },
+    {
+      "id": "T12",
+      "description": "Phase 2: Write research plan documents",
+      "status": "completed",
+      "completed_at": "2026-03-22",
+      "depends_on": [],
+      "note": "合并为 docs/research_plan_NO3RR.md, 旧文件在 docs/archive_pre_merge/"
+    },
+    {
+      "id": "T13",
+      "description": "Phase 2: 合并文档 → research_plan_NO3RR.md",
+      "status": "completed",
+      "completed_at": "2026-03-23",
       "depends_on": []
     },
+
     {
       "id": "T6",
-      "description": "Phase 2: Implement CO2RR Cu(100) model (~8 species, ~12 processes, CO*-CO* lateral, diffusion)",
+      "description": "Phase 2 DFT: 结构优化 — p(4×4) Cu(100)上所有中间体、共吸附、NEB IS/FS",
       "status": "pending",
-      "depends_on": ["T5"]
+      "depends_on": ["T5"],
+      "note": "D4方法论: Cu(100), p(4×4)直接优化, ISMEAR=0/σ=0.05, D3(BJ). 总计~57个结构优化",
+      "subtasks": [
+        {
+          "id": "T6.0",
+          "description": "Phase 0 — Bulk Cu优化 + 气相分子优化",
+          "status": "pending",
+          "structures": [
+            "1× bulk Cu fcc → 晶格常数a₀ (~3.63 Å)",
+            "H₂, H₂O, NO(ISPIN=2), NH₃, N₂, N₂O, NO₂, OH(ISPIN=2)"
+          ],
+          "计算数": 9,
+          "VASP参数": "气相: ISMEAR=0, SIGMA=0.05, Gamma-only, 大box 15×16×17 Å"
+        },
+        {
+          "id": "T6.1",
+          "description": "Phase 1 — Clean slab + 13种单吸附物 (p(4×4) Cu(100), 直接放稳定位点)",
+          "status": "pending",
+          "depends_on": ["T6.0"],
+          "structures": [
+            "1× clean p(4×4) Cu(100) slab (4层64Cu, 底2固定, 顶2弛豫, 真空15Å)",
+            "*H @hollow",
+            "*O @hollow",
+            "*N @hollow",
+            "*OH @bridge/hollow",
+            "*NO @hollow (N朝下)",
+            "*NO₂ @bridge/O朝下",
+            "*NO₃ @O朝下三齿/双齿",
+            "*NOH @hollow",
+            "*NHOH @hollow/bridge",
+            "*NH @hollow",
+            "*NH₂ @bridge",
+            "*NH₃ @atop (弱吸附)",
+            "*N₂O (弱吸附)"
+          ],
+          "计算数": 14,
+          "VASP参数": "p(4×4), K: 2×2×1, ISMEAR=0, SIGMA=0.05, ISPIN=2, LDIPOL/IDIPOL=3, IVDW=12"
+        },
+        {
+          "id": "T6.2",
+          "description": "Phase 2 — 共吸附: Tier 1 横向相互作用 (4对×2距离=8个)",
+          "status": "pending",
+          "depends_on": ["T6.1"],
+          "structures": [
+            "*NO+*NO @1NN (→ 复用为R12 NEB IS)",
+            "*NO+*NO @2NN",
+            "*NO+*H @1NN (→ 复用为R6 NEB IS)",
+            "*NO+*H @2NN",
+            "*H+*H @1NN (→ 复用为R16 NEB IS)",
+            "*H+*H @2NN",
+            "*OH+*NO @1NN (→ 复用为R4 NEB FS)",
+            "*OH+*NO @2NN"
+          ],
+          "计算数": 8,
+          "note": "ε = E(co-ads) − E(slab+A) − E(slab+B) + E(clean)。Cu(100): 1NN=a₀/√2≈2.566Å, 2NN=a₀≈3.63Å"
+        },
+        {
+          "id": "T6.3",
+          "description": "Phase 3 — 共吸附: Tier 2 横向相互作用 (6对×2距离=12个)",
+          "status": "pending",
+          "depends_on": ["T6.1"],
+          "structures": [
+            "*OH+*OH @1NN/2NN",
+            "*OH+*H @1NN (→ 复用为R5 NEB IS) /2NN",
+            "*N+*NO @1NN/2NN",
+            "*N+*N @1NN (→ 复用为R14 NEB IS) /2NN",
+            "*O+*NO @1NN/2NN",
+            "*N+*H @1NN/2NN"
+          ],
+          "计算数": 12
+        },
+        {
+          "id": "T6.4",
+          "description": "Phase 4 — 额外的NEB IS/FS共吸附结构 (不在ε列表中)",
+          "status": "pending",
+          "depends_on": ["T6.1"],
+          "structures_IS": [
+            "*NO₃+*H @1NN → R2 IS",
+            "*NO₂+*H @1NN → R4 IS",
+            "*NOH+*H @1NN → R7 IS",
+            "*NHOH+*H @1NN → R8 IS",
+            "*NH+*H @1NN → R9 IS",
+            "*NH₂+*H @1NN → R10 IS",
+            "H₂O on slab → R15 (Volmer) IS"
+          ],
+          "structures_FS_new": [
+            "*NO₂+*OH @1NN → R2 FS (新建)",
+            "*NH+H₂O上方 → R8 FS (新建)",
+            "N₂上方+2空位 → R14 FS (新建)",
+            "*H+OH⁻上方 → R15 FS (新建)",
+            "H₂上方+2空位 → R16 FS (新建)"
+          ],
+          "structures_FS_reuse": [
+            "*NOH → R6 FS (=T6.1单吸附)",
+            "*NHOH → R7 FS (=T6.1单吸附)",
+            "*NH₂ → R9 FS (=T6.1单吸附)",
+            "*NH₃ → R10 FS (=T6.1单吸附)",
+            "*N₂O → R12 FS (=T6.1单吸附)",
+            "*NO+*OH @1NN → R4 FS (=T6.2 Tier1)"
+          ],
+          "计算数": "~12 (7 IS + 5 FS新建)"
+        }
+      ]
     },
+
+    {
+      "id": "T6b",
+      "description": "Phase 2 DFT: CI-NEB过渡态搜索 — 所有~15个基元步骤",
+      "status": "pending",
+      "depends_on": ["T6"],
+      "note": "D4: 所有步骤(热力学+PCET)统一用CI-NEB。PCET用热力学类比(*A+*H→*B)。NEB不收敛时PCET可回退BEP",
+      "subtasks": [
+        {
+          "id": "T6b.1",
+          "description": "热力学步骤TS — 5个CI-NEB",
+          "status": "pending",
+          "反应": [
+            {"step": "R12: *NO+*NO→*N₂O+*", "IMAGES": "5-7", "Ea_est": "0.05-0.80 eV", "priority": "★★★★★"},
+            {"step": "R14: *N+*N→N₂(g)+2*", "IMAGES": 5, "Ea_est": "~0.45 eV", "priority": "★★★"},
+            {"step": "R16: *H+*H→H₂+2* (Tafel)", "IMAGES": "3-5", "Ea_est": "0.8-1.0 eV", "priority": "★★★"},
+            {"step": "R18: *NO扩散 hollow→hollow", "IMAGES": 3, "Ea_est": "0.1-0.3 eV", "priority": "★★★"},
+            {"step": "R19: *H扩散 hollow→hollow", "IMAGES": 3, "Ea_est": "0.1-0.2 eV", "priority": "★★"}
+          ]
+        },
+        {
+          "id": "T6b.2",
+          "description": "PCET步骤TS (热力学类比) — 9个CI-NEB, BEP备选",
+          "status": "pending",
+          "反应": [
+            {"step": "R2: *NO₃+*H→*NO₂+*OH", "priority": "★★★"},
+            {"step": "R4: *NO₂+*H→*NO+*OH", "priority": "★★★"},
+            {"step": "R5: *OH+*H→H₂O+2*", "priority": "★★★"},
+            {"step": "R6: *NO+*H→*NOH+*", "priority": "★★★★★ PLS!"},
+            {"step": "R7: *NOH+*H→*NHOH+*", "priority": "★★★"},
+            {"step": "R8: *NHOH+*H→*NH+H₂O", "priority": "★★★"},
+            {"step": "R9: *NH+*H→*NH₂+*", "priority": "★★"},
+            {"step": "R10: *NH₂+*H→*NH₃+*", "priority": "★★"},
+            {"step": "R15: H₂O+*→*H+OH⁻ (Volmer)", "priority": "★★★"}
+          ],
+          "fallback": "若CI-NEB不收敛 → BEP: Ea=α×ΔG+Ea0 (α≈0.5, Ea0待校准)"
+        },
+        {
+          "id": "T6b.3",
+          "description": "脱附势垒 — 从吸附能直接得到, 不需TS搜索",
+          "status": "pending",
+          "反应": [
+            {"step": "*NH₃→NH₃(aq)+*", "Ea_est": "~|BE|"},
+            {"step": "*N₂O→N₂O(g)+*", "Ea_est": "~|BE|"},
+            {"step": "NO₃⁻(aq)+*→*NO₃", "note": "吸附无垒或低垒"}
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "T6c",
+      "description": "Phase 2 DFT: 频率计算 — IS和TS的ZPE",
+      "status": "pending",
+      "depends_on": ["T6b"],
+      "detail": "对所有反应的IS和TS结构做频率计算(IBRION=5)。真空条件下即可。TS应有且仅有一个虚频。",
+      "计算数": "~30 (15 IS + 15 TS)",
+      "用途": "ΔZPE = ZPE(TS) − ZPE(IS)，用于GC-DFT恒电势活化能公式"
+    },
+
+    {
+      "id": "T6d",
+      "description": "Phase 2 DFT: GC-DFT恒电势计算 — 所有步骤的Ea(U)",
+      "status": "pending",
+      "depends_on": ["T6c"],
+      "detail": "对每个反应步骤的IS和TS分别做7个变电荷单点能(NELECT±0.5/1.0/1.5 + neutral)。VASPsol隐式溶剂化。提取功函数→计算Ω(U)→二次拟合→Ea(U)=Ω_TS(U)−Ω_IS(U)+ΔZPE",
+      "计算数": "~210 (15步 × 14点/步)",
+      "VASP参数": "NSW=0, EDIFF=1e-7, LSOL=.TRUE., LVHAR=.TRUE., ISMEAR=0, SIGMA=0.05, ISYM=-1",
+      "GC-DFT教程": "/home/reny0b/scratch/zls/project4-gs-colab/Mo/transition/H/transition-energy/GC-DFT_tutorial.md",
+      "质量检查": "R² > 0.99, Ea > 0, 趋势物理合理"
+    },
+
     {
       "id": "T7",
-      "description": "Phase 2: Study A — CO* spatial distribution mapping (vary lateral interaction strength)",
+      "description": "Phase 2 Code: 在SPARK中实现NO₃RR on Cu(100)模型",
       "status": "pending",
-      "depends_on": ["T6"]
+      "depends_on": ["T6d"],
+      "note": "D4更新: Cu(100)正方晶格。速率常数从GC-DFT的Ea(U)获取。参考models/her_Pt111.py",
+      "subtasks": [
+        {
+          "id": "T7.1",
+          "description": "创建 models/no3rr_Cu100.py — 定义物种、位点、反应网络",
+          "status": "pending",
+          "detail": "正方晶格(Cu(100)). 12种表面物种 + ~15个Process(速率用GC-DFT的Ea(U)多项式) + 横向相互作用(Tier1+Tier2 ε值)"
+        },
+        {
+          "id": "T7.2",
+          "description": "扩展spark引擎 — 支持正方晶格、双分子反应、多产物追踪",
+          "status": "pending",
+          "detail": "(1)正方晶格(4邻居) vs 六角晶格(6邻居) (2)双分子表面反应 (3)PCET+*OH副产物 (4)多产物FE计算 (5)恒电势Ea(U)=aU²+bU+c速率"
+        },
+        {
+          "id": "T7.3",
+          "description": "创建 no3rr_dft_params.json — DFT参数文件",
+          "status": "pending",
+          "detail": "GC-DFT拟合系数(a,b,c for Ω_IS和Ω_TS) + ΔZPE + ε_1NN/ε_2NN + 脱附BE"
+        },
+        {
+          "id": "T7.4",
+          "description": "基础验证 — 单步骤正确性检查",
+          "status": "pending"
+        },
+        {
+          "id": "T7.5",
+          "description": "创建 MKM基准 — NO₃RR mean-field模型",
+          "status": "pending"
+        }
+      ]
     },
+
     {
       "id": "T8",
-      "description": "Phase 2: Study B — C1/C2 selectivity vs potential (KMC vs MKM comparison)",
+      "description": "Phase 2 Study A: *NO空间分布 vs 横向相互作用强度",
       "status": "pending",
-      "depends_on": ["T7"]
+      "depends_on": ["T7"],
+      "detail": {
+        "科学问题": "*NO-*NO横向相互作用如何决定*NO空间分布和N₂/NH₃选择性？",
+        "方法": "扫描ε(*NO-*NO)从-0.10到+0.20 eV",
+        "lattice": "50×50 正方晶格, T=298K",
+        "输出": "fig_studyA_*.png"
+      }
     },
+
     {
       "id": "T9",
-      "description": "Phase 2: Study C — Diffusion rate effect on C2 selectivity (mean-field breakdown threshold)",
+      "description": "Phase 2 Study B: NH₃/N₂选择性 vs 电位 — KMC vs MKM对比",
       "status": "pending",
-      "depends_on": ["T7"]
+      "depends_on": ["T7"],
+      "detail": {
+        "方法": "扫描U: -0.2~-1.0V vs RHE, KMC vs MKM",
+        "输出": "fig_studyB_*.png"
+      }
     },
+
     {
       "id": "T10",
-      "description": "Phase 2: Study D — Polarization curves and Faradaic efficiency plots",
+      "description": "Phase 2 Study C: *NO扩散速率对选择性的影响",
       "status": "pending",
-      "depends_on": ["T8", "T9"]
+      "depends_on": ["T7"],
+      "detail": {
+        "方法": "扫描*NO扩散势垒E_diff: 0.05~0.50 eV",
+        "输出": "fig_studyC_*.png"
+      }
     },
+
     {
       "id": "T11",
-      "description": "Write complete research plan document",
-      "status": "completed",
-      "completed_at": "2026-03-21",
-      "depends_on": []
+      "description": "Phase 2 Study D: 完整极化曲线 + FE vs U + 偏电流密度",
+      "status": "pending",
+      "depends_on": ["T8", "T9", "T10"],
+      "detail": {
+        "科学问题": "SPARK能否定量预测NO₃RR on Cu(100)的实验可观测量？",
+        "输出": "fig_studyD_*.png"
+      }
+    },
+
+    {
+      "id": "T14",
+      "description": "Phase 2: 论文撰写 — 空间KMC揭示NO₃RR选择性机理",
+      "status": "pending",
+      "depends_on": ["T11"],
+      "detail": {
+        "目标期刊": "ACS Catalysis 或 Journal of Catalysis",
+        "核心卖点": "首个NO₃RR KMC研究 + ab initio GC-DFT参数 + 空间效应定量分析"
+      }
+    },
+
+    {
+      "id": "T15",
+      "description": "Phase 2 可选: Tier 3横向相互作用 + 三体项检测",
+      "status": "pending",
+      "depends_on": ["T6.2"],
+      "note": "若Tier 1的|ε_1NN|>0.15 eV，补做Tier 3 + 三体项",
+      "optional": true
+    },
+
+    {
+      "id": "T16",
+      "description": "Phase 2 可选: Rust实现NO₃RR模型",
+      "status": "pending",
+      "depends_on": ["T7"],
+      "optional": true
     }
   ],
-  "last_updated": "2026-03-21T20:50"
+
+  "summary": {
+    "total": 19,
+    "completed": 7,
+    "pending": 12,
+    "blocked_on": "T6.0 (用户Bulk Cu + 气相分子优化)",
+    "结构优化总量": {
+      "Phase 0 (bulk+气相)": "9个",
+      "Phase 1 (clean slab+单吸附, p(4×4))": "14个",
+      "Phase 2 (Tier1共吸附)": "8个",
+      "Phase 3 (Tier2共吸附)": "12个",
+      "Phase 4 (额外NEB IS+FS)": "~12个",
+      "小计": "~57个结构优化"
+    },
+    "CI-NEB总量": {
+      "热力学步骤": "5个 (R12,R14,R16,R18,R19)",
+      "PCET步骤(热力学类比)": "9个 (R2,R4,R5,R6,R7,R8,R9,R10,R15)",
+      "脱附": "0 (从BE直接得到)",
+      "小计": "~14个CI-NEB, 每个5 images"
+    },
+    "频率计算": "~30个 (15 IS + 15 TS)",
+    "GC-DFT单点": "~210个 (15步 × 7charge × 2(IS+TS))",
+    "DFT计算总计": "~390-400个"
+  },
+
+  "dependency_graph": "T1→T2→T3→T4 (Phase1, done) | T5→T6→T6b→T6c→T6d→T7→{T8,T9,T10}→T11→T14 | T6.0→T6.1→{T6.2,T6.3,T6.4} | T7.1→T7.2→T7.3→T7.4→T7.5",
+
+  "last_updated": "2026-03-23T22:00"
 }

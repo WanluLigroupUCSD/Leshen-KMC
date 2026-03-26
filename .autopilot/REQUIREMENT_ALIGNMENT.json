@@ -1,37 +1,64 @@
 {
-  "project": "Leshen-KMC validation and CO2RR C2 selectivity study",
-  "goal": "Phase 1: Validate Leshen-KMC with HER on Pt(111). Phase 2: Investigate CO* spatial distribution effects on C2 selectivity in CO2RR on Cu(100) — first electrocatalytic spatial KMC study of C-C coupling",
+  "project": "SPARK: Spatial KMC for Electrocatalysis",
+  "goal": "Phase 1: Validate SPARK with HER on Pt(111). Phase 2: Build ab initio NO₃RR on Cu(100) model — first spatial KMC study of nitrate reduction selectivity (NH₃ vs N₂) with GC-DFT parameters",
   "requirements": [
     {
       "id": "R1",
-      "description": "Phase 1: Build and validate HER Pt(111) model (Volmer/Tafel/Heyrovsky, lateral, diffusion, polarization curve)",
-      "status": "completed"
+      "description": "Phase 1: Build and validate HER Pt(111) model (Volmer/Tafel/Heyrovsky, lateral interactions, diffusion, polarization curve)",
+      "status": "completed",
+      "completed_at": "2026-03-21"
     },
     {
       "id": "R2",
-      "description": "Phase 2: Build CO2RR Cu(100) model with CO* dimerization, lateral interactions, diffusion",
-      "status": "pending"
+      "description": "Phase 2 DFT: Complete ab initio DFT calculations for NO₃RR on Cu(100) — structure optimization (~57), CI-NEB (~14), frequency (~30), GC-DFT (~210)",
+      "status": "in_progress",
+      "blocked_on": "T6.0 (bulk Cu + gas phase molecules)"
     },
     {
       "id": "R3",
-      "description": "Phase 2: Investigate CO* spatial distribution (island vs uniform) and its effect on C2 selectivity",
-      "status": "pending"
+      "description": "Phase 2 Code: Implement NO₃RR Cu(100) model in SPARK with 12 surface species, ~15 reactions, lateral interactions, square lattice",
+      "status": "pending",
+      "depends_on": "R2"
     },
     {
       "id": "R4",
-      "description": "Phase 2: Compare KMC vs MKM predictions for C1/C2 selectivity — quantify mean-field error",
-      "status": "pending"
+      "description": "Phase 2 Study A: Investigate *NO spatial distribution vs lateral interaction strength and its effect on NH₃/N₂ selectivity",
+      "status": "pending",
+      "depends_on": "R3"
     },
     {
       "id": "R5",
-      "description": "Phase 2: Study CO* diffusion rate and lateral interaction strength as tuning knobs for C2 selectivity",
-      "status": "pending"
+      "description": "Phase 2 Study B: Compare KMC vs MKM predictions for NH₃/N₂ selectivity vs potential — quantify mean-field error",
+      "status": "pending",
+      "depends_on": "R3"
     },
     {
       "id": "R6",
-      "description": "Generate polarization curves and Faradaic efficiency vs potential for CO2RR",
-      "status": "pending"
+      "description": "Phase 2 Study C: Study *NO diffusion rate as tuning knob for selectivity",
+      "status": "pending",
+      "depends_on": "R3"
+    },
+    {
+      "id": "R7",
+      "description": "Phase 2 Study D: Generate polarization curves, Faradaic efficiency vs potential, and partial current densities for NO₃RR",
+      "status": "pending",
+      "depends_on": ["R4", "R5", "R6"]
+    },
+    {
+      "id": "R8",
+      "description": "Phase 2: Write manuscript — spatial KMC reveals NO₃RR selectivity mechanism on Cu(100)",
+      "status": "pending",
+      "depends_on": "R7",
+      "target_journal": "ACS Catalysis or Journal of Catalysis"
     }
   ],
-  "last_updated": "2026-03-21"
+  "methodology": {
+    "surface": "Cu(100), p(4×4), 4-layer 64 Cu atoms",
+    "functional": "PBE + DFT-D3(BJ)",
+    "TS_search": "CI-NEB for all steps; BEP fallback for PCET if CI-NEB fails",
+    "barriers": "GC-DFT (VASPsol implicit solvation + variable charge + Ω(U) quadratic fit)",
+    "lattice": "Square lattice (Cu(100) 4 nearest neighbors)"
+  },
+  "decisions_applied": ["D1", "D2", "D3", "D4"],
+  "last_updated": "2026-03-23"
 }

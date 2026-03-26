@@ -1,0 +1,60 @@
+{
+  "decisions": [
+    {
+      "id": "D1",
+      "date": "2026-03-22",
+      "description": "Phase 2 体系从 CO2RR 转向多产物电催化体系",
+      "reason": "用户不再关注CO2RR，想研究能体现KMC空间分辨优势的多产物反应体系",
+      "impact": "T5-T11 全部需要重新规划"
+    },
+    {
+      "id": "D2",
+      "date": "2026-03-22",
+      "description": "深度调研完成，候选缩窄为尿素电合成和NO3RR",
+      "reason": "6项并行调研（40+文献）综合评估",
+      "recommendation": "先NO3RR再扩展到尿素"
+    },
+    {
+      "id": "D3",
+      "date": "2026-03-22",
+      "description": "最终确认Phase 2体系为NO3RR on Cu(111)，所有参数从用户自己的真空DFT计算获取",
+      "reason": "用户要求完全从头算(ab initio)，不使用文献DFT数值。NO3RR参数可行性最高，DFT计算量适中(~85个结构优化)",
+      "impact": "T6更新为用户执行DFT计算（~85个任务，含位点测试+横向相互作用），而非从文献收集参数",
+      "key_document": "docs/DFT_lateral_interactions_guide.md — 完整DFT操作指南"
+    },
+    {
+      "id": "D4",
+      "date": "2026-03-23",
+      "description": "DFT计算方法论全面更新：Cu(100) + p(4×4) + GC-DFT",
+      "reason": "用户确认自己的计算偏好和已有经验",
+      "changes": {
+        "表面": "Cu(111) → Cu(100)，正方晶格，吸附位点: 4-fold hollow / bridge / atop",
+        "超胞": "跳过p(3×3)筛选，对已知稳定位点直接在p(4×4)上结构优化",
+        "K-points": "2×2×1 (Γ-centered)",
+        "展宽": "ISMEAR=0 (Gaussian), SIGMA=0.05（原方案ISMEAR=1, σ=0.15）",
+        "过渡态搜索": "CI-NEB 用于所有步骤（热力学 + PCET热力学类比）",
+        "能垒计算": "GC-DFT 用于所有步骤（VASPsol隐式溶剂 + 变电荷单点能 + Ω(U)二次拟合）",
+        "色散": "DFT-D3(BJ), IVDW=12",
+        "溶剂化": "VASPsol: LSOL=.TRUE., EB_K=78.4, TAU=0, LAMBDA_D_K=3.0"
+      },
+      "PCET备选方案": "PCET步骤的过渡态较难找到（用户经验）。若CI-NEB对某些PCET步骤不收敛，可回退到BEP关系: Ea=α×ΔG+Ea0 (α≈0.5)",
+      "impact": "KMC晶格模型需从六角→正方；DFT计算量增加（每步额外14个GC-DFT单点能）；精度大幅提升",
+      "GC-DFT参考": "用户已有成熟工作流，见 /home/reny0b/scratch/zls/project4-gs-colab/Mo/transition/H/transition-energy/GC-DFT_tutorial.md"
+    }
+    ,
+    {
+      "id": "D5",
+      "date": "2026-03-26",
+      "description": "HER benchmark验证 — SPARK与Zacros 4.0高度一致",
+      "reason": "用户要求用kmos和Zacros对相同HER模型进行交叉验证",
+      "results": {
+        "SPARK vs Zacros": "θ_H和j在所有电位下吻合（<5%随机噪声），验证了SPARK引擎的正确性",
+        "kmos": "编译问题已修复（numpy 2.4 f2py兼容性），运行测试待完成",
+        "关键发现": "Zacros的prox_factor对irreversible step也生效（BEP数学关系），rectangular_periodic晶格=4NN正方晶格"
+      },
+      "impact": "Phase 1 HER验证进一步加强，SPARK引擎可信度确认",
+      "artifacts": "benchmark/run_benchmark.py, benchmark/fig_benchmark_comparison.png"
+    }
+  ],
+  "last_updated": "2026-03-26T20:00"
+}

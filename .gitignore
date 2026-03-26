@@ -1,6 +1,6 @@
 # Rust
 target/
-mykmc-rs/target/
+spark-rs/target/
 **/*.rs.bk
 *.pdb
 
