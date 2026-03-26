@@ -1,0 +1,31 @@
+# ============================================================
+#  SPARK Input: HER on Pt(111) in acidic media
+# ============================================================
+
+# System
+SYSTEM    = HER_Pt111
+SURFACE   = Pt(111)             (auto-sets lattice constant)
+
+# Conditions
+TEMP      = 298                 (K)
+POTENTIAL = -0.2                (V vs RHE)
+
+# Species (empty/vacant site * is always implicit)
+SPECIES   = H
+
+# Elementary reactions
+# Format: name : equation : Ea(eV) [: electrochemical : beta]
+REACTION  = Volmer_fwd : * -> H : 0.67 : electrochemical : 0.5
+REACTION  = Volmer_rev : H -> * : 0.62 : electrochemical : -0.5
+REACTION  = Tafel : H + H -> * + * : 0.85
+REACTION  = Heyrovsky : H -> * : 0.70 : electrochemical : 0.5
+DIFFUSION = H : 0.10
+
+# Interactions
+LATERAL   = H-H : 0.10         (eV, positive = repulsive)
+BEP       = Volmer_fwd : 0.5
+
+# Simulation control
+LSIZE     = 20 20
+NEQUIL    = 100000
+NSTEPS    = 100000

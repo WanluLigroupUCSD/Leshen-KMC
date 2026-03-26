@@ -1,0 +1,24 @@
+# CO adsorption/desorption on Pd(100) -- minimal SPARK example
+
+name: CO_on_Pd100
+surface: Pd(100)
+temperature: 600
+
+species: [CO]
+
+parameters:
+  p_CO: 1.0                       # bar
+  A: "(3.5*angstrom)**2"          # site area
+  deltaG: -0.5                    # eV
+
+reactions:
+  CO_adsorption:
+    type: adsorption
+    reaction: "* -> CO"
+    pressure: p_CO
+    mass: m_CO
+    area: A
+
+  CO_desorption:
+    reaction: "CO -> *"
+    rate: "p_CO*bar*A/sqrt(2*pi*umass*m_CO/(kB*T))*exp(deltaG*eV/(kB*T))"

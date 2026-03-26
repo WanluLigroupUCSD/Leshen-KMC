@@ -1,0 +1,48 @@
+# HER on Pt(111) -- SPARK model
+#
+# Volmer:    H+(aq) + e- + * <-> H*        (PCET)
+# Tafel:     H* + H*(nn) -> H2(g) + 2*     (thermal)
+# Heyrovsky: H* + H+(aq) + e- -> H2 + *    (PCET)
+# Diffusion: H*@s1 + *@s2 <-> *@s1 + H*@s2
+
+name: HER_Pt111
+surface: Pt(111)
+temperature: 298
+potential: -0.2
+
+species: [H]
+
+reactions:
+  Volmer_fwd:
+    reaction: "* -> H"
+    Ea: 0.67
+    type: electrochemical
+    beta: 0.5
+
+  Volmer_rev:
+    reaction: "H -> *"
+    Ea: 0.62
+    type: electrochemical
+    beta: -0.5
+    reverse_of: Volmer_fwd
+
+  Tafel:
+    reaction: "H + H(nn) -> * + *(nn)"
+    Ea: 0.85
+
+  Heyrovsky:
+    reaction: "H -> *"
+    Ea: 0.70
+    type: electrochemical
+    beta: 0.5
+
+  H_diffusion:
+    type: diffusion
+    species: H
+    Ea: 0.10
+
+lateral:
+  H-H: 0.10           # eV, repulsive
+
+bep:
+  Volmer_fwd: 0.5

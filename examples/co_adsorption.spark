@@ -1,0 +1,13 @@
+# CO adsorption/desorption on Pd(100)
+
+name        CO_on_Pd100
+surface     Pd(100)
+temperature 600
+species     CO
+
+parameter   p_CO   1.0
+parameter   A      (3.5*angstrom)**2
+parameter   deltaG -0.5
+
+reaction  CO_adsorption   * -> CO   rate=p_CO*bar*A/sqrt(2*pi*m_CO*umass/(kB*T))
+reaction  CO_desorption   CO -> *   rate=p_CO*bar*A/sqrt(2*pi*umass*m_CO/(kB*T))*exp(deltaG*eV/(kB*T))

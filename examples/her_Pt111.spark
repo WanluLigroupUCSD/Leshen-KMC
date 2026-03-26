@@ -1,0 +1,20 @@
+# HER on Pt(111) -- acidic media
+#
+# Volmer:    H+(aq) + e- + * <-> H*
+# Tafel:     H* + H*(nn) -> H2(g) + 2*
+# Heyrovsky: H* + H+(aq) + e- -> H2 + *
+
+name        HER_Pt111
+surface     Pt(111)
+temperature 298
+potential   -0.2
+species     H
+
+reaction  Volmer_fwd    * -> H          Ea=0.67  electrochemical  beta=0.5
+reaction  Volmer_rev    H -> *          Ea=0.62  electrochemical  beta=-0.5
+reaction  Tafel         H + H -> * + *  Ea=0.85
+reaction  Heyrovsky     H -> *          Ea=0.70  electrochemical  beta=0.5
+diffusion H  Ea=0.10
+
+lateral  H-H  0.10
+bep      Volmer_fwd  0.5

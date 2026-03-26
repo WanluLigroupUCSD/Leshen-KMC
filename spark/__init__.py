@@ -35,8 +35,13 @@ from .rates import (
     bep_modified_rate, lateral_modified_rate,
     arrhenius, tst_rate, hertz_knudsen, electrochemical_rate,
 )
+from .io import (
+    load_model, load_sparkin, load_yaml, loads_sparkin, loads_yaml,
+    project_to_sparkin, project_to_yaml,
+    load_spark, loads_spark, project_to_spark,  # aliases
+)
 
-__version__ = '0.3.0'
+__version__ = '0.4.0'
 __all__ = [
     'Project', 'Species', 'Site', 'Layer', 'Lattice', 'Coord',
     'Condition', 'Action', 'Parameter', 'Process',
@@ -48,4 +53,7 @@ __all__ = [
     'tof_to_current_density', 'load_energy_data',
     'bep_modified_rate', 'lateral_modified_rate',
     'arrhenius', 'tst_rate', 'hertz_knudsen', 'electrochemical_rate',
+    'load_model', 'load_sparkin', 'load_yaml',
+    'loads_sparkin', 'loads_yaml',
+    'project_to_sparkin', 'project_to_yaml',
 ]

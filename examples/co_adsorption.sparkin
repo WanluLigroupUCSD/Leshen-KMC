@@ -1,0 +1,17 @@
+# ============================================================
+#  SPARK Input: CO adsorption/desorption on Pd(100)
+# ============================================================
+
+SYSTEM    = CO_on_Pd100
+SURFACE   = Pd(100)
+TEMP      = 600                 (K)
+
+SPECIES   = CO
+
+PARAMETER = p_CO  1.0           (CO partial pressure, bar)
+PARAMETER = A  (3.5*angstrom)**2
+PARAMETER = deltaG  -0.5        (adsorption free energy, eV)
+
+# Custom rate expressions
+REACTION  = CO_adsorption : * -> CO : rate=p_CO*bar*A/sqrt(2*pi*m_CO*umass/(kB*T))
+REACTION  = CO_desorption : CO -> * : rate=p_CO*bar*A/sqrt(2*pi*umass*m_CO/(kB*T))*exp(deltaG*eV/(kB*T))
