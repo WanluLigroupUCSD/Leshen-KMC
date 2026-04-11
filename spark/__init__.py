@@ -1,21 +1,29 @@
 """
 SPARK - SPatial Atomistic Reaction Kinetics
 
-A pure Python implementation of lattice KMC (BKL/rejection-free algorithm)
-and mean-field microkinetic ODE solver for heterogeneous catalysis.
+A unified KMC framework for heterogeneous catalysis combining:
 
-Features:
-  - BKL/VSSM rejection-free KMC algorithm
-  - Neighbor list with spatial event matching
-  - Pairwise lateral interactions (coverage-dependent rates)
-  - BEP (Bronsted-Evans-Polanyi) relations
-  - Surface diffusion helper
-  - Site type support (top, bridge, hollow, etc.)
-  - Butler-Volmer electrochemical rates
-  - Mean-field microkinetic ODE solver
-  - Polarization curve computation
+  Lattice KMC (spark.engine):
+    - BKL/VSSM rejection-free algorithm
+    - Neighbor list with spatial event matching
+    - Pairwise lateral interactions (coverage-dependent rates)
+    - BEP (Bronsted-Evans-Polanyi) relations
+    - Surface diffusion helper
+    - Site type support (top, bridge, hollow, etc.)
+    - Butler-Volmer electrochemical rates
+    - Mean-field microkinetic ODE solver
+    - Polarization curve computation
 
-API style follows kmos conventions.
+  Off-Lattice KMC (spark.offlattice):
+    - On-the-fly saddle point search (dimer method)
+    - Local environment detection with 3-step matching
+    - Mechanism catalogue with caching and symmetry exploitation
+    - Basin / SuperBasin / SuperCache acceleration (bac-MRM)
+    - ASE calculator integration (VASP, MACE, EMT, etc.)
+    - Full SKMC simulation engine
+
+API style follows kmos conventions for lattice KMC,
+and ASE conventions for off-lattice KMC.
 """
 
 from .types import (
@@ -41,8 +49,13 @@ from .io import (
     load_spark, loads_spark, project_to_spark,  # aliases
 )
 
-__version__ = '0.4.0'
+__version__ = '0.5.0'
+
+# Off-lattice KMC (lazy import to avoid hard ASE dependency)
+from . import offlattice
+
 __all__ = [
+    # Lattice KMC
     'Project', 'Species', 'Site', 'Layer', 'Lattice', 'Coord',
     'Condition', 'Action', 'Parameter', 'Process',
     'LateralInteraction', 'BEPRelation',
@@ -56,4 +69,6 @@ __all__ = [
     'load_model', 'load_sparkin', 'load_yaml',
     'loads_sparkin', 'loads_yaml',
     'project_to_sparkin', 'project_to_yaml',
+    # Off-lattice KMC
+    'offlattice',
 ]
