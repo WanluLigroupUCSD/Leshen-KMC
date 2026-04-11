@@ -22,8 +22,17 @@ A unified KMC framework for heterogeneous catalysis combining:
     - ASE calculator integration (VASP, MACE, EMT, etc.)
     - Full SKMC simulation engine
 
+  Dynamic Catalytic KMC (spark.dynamic):
+    - Dynamic surface with mutable site identity (graph/weak-lattice)
+    - Environment-dependent rates via RateEstimator protocol
+    - Unified catalytic + structural event system
+    - Site conversion and segregation events
+    - Local-only updates with environment-aware event caching
+    - Swappable rate backends: lookup table → ML surrogate → GNN
+
 API style follows kmos conventions for lattice KMC,
-and ASE conventions for off-lattice KMC.
+ASE conventions for off-lattice KMC,
+and graph conventions for dynamic catalytic KMC.
 """
 
 from .types import (
@@ -49,10 +58,12 @@ from .io import (
     load_spark, loads_spark, project_to_spark,  # aliases
 )
 
-__version__ = '0.5.0'
+__version__ = '0.6.0'
 
 # Off-lattice KMC (lazy import to avoid hard ASE dependency)
 from . import offlattice
+# Dynamic catalytic KMC
+from . import dynamic
 
 __all__ = [
     # Lattice KMC
@@ -71,4 +82,6 @@ __all__ = [
     'project_to_sparkin', 'project_to_yaml',
     # Off-lattice KMC
     'offlattice',
+    # Dynamic catalytic KMC
+    'dynamic',
 ]
