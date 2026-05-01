@@ -1,399 +1,412 @@
-# SPARK
+# SPARK — SPatial Atomistic Reaction Kinetics
 
-**SPatial Atomistic Reaction Kinetics**
+A unified Python + Rust toolkit for **kinetic Monte Carlo (KMC)** and **mean-field microkinetic modeling (MKM)** of electrochemical and heterogeneous catalysis.
 
-A Python + Rust toolkit for lattice kinetic Monte Carlo (KMC) and mean-field microkinetic modeling of electrochemical and heterogeneous catalysis.
-
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Rust 1.70+](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ---
 
-## Overview
+## Three KMC Engines, One Framework
 
-SPARK provides two complementary engines for simulating surface catalytic reactions:
+SPARK provides **three complementary KMC kernels** that share the same Python API and rate-expression parser, plus a Rust-accelerated hot loop:
 
-- **`spark`** (Python) -- research-friendly API with SciPy solvers, DFT energy interpolation, and polarization curve support
-- **`spark-rs`** (Rust) -- high-performance binary with Fenwick tree O(log N) site selection and Newton-Raphson steady-state solver
+| Engine | Module | When to use |
+|---|---|---|
+| **Lattice KMC** | `spark.engine` | Known reaction network on a periodic surface (e.g. HER on Pt(111), CO₂RR on Cu(100)) |
+| **Multi-Lattice KMC** | `spark.engine` (multi-layer) | Morphological transitions between coexisting commensurate phases (e.g. PdO ↔ Pd(100), surface oxide reduction) |
+| **Off-Lattice OTF KMC** | `spark.offlattice` | Continuous-coordinate systems with on-the-fly mechanism discovery (e.g. amorphous oxides, surface reconstruction) |
+| **Dynamic Catalytic KMC** | `spark.dynamic` | Environment-dependent rates with site identity evolving (e.g. PdAu segregation, alloy ordering) |
 
-Both engines implement the BKL rejection-free KMC algorithm with pairwise lateral interactions, BEP relations, Butler-Volmer electrochemical rates, and kmos-compatible rate expressions.
-
-### Validated
-
-SPARK has been quantitatively validated against two established KMC codes on an identical HER/Pt(111) test case:
-
-| Engine | Language | Coverage (theta_H) | Current density (j) | Wall time |
-|--------|----------|:------------------:|:-------------------:|:---------:|
-| **SPARK** | Python | 0.338 | reference | 281 s |
-| **kmos** | Python/Fortran | 0.332 | < 2% deviation | 20 s |
-| **Zacros 4.0** | Fortran | 0.341 | < 2% deviation | 12 s |
-
-> All three engines agree within stochastic noise across 11 potential points (0 to -0.5 V vs RHE). See [`benchmark/BENCHMARK_SUMMARY.md`](benchmark/BENCHMARK_SUMMARY.md) for full results.
+All four share the same rate-expression parser (kmos-compatible), microkinetic ODE solver, and polarization-curve infrastructure.
 
 ---
 
-## Features
+## Headline Features
 
-| | Feature | Description |
-|---|---------|-------------|
-| **KMC** | BKL rejection-free algorithm | O(1) bookkeeping (Python), Fenwick tree O(log N) site selection (Rust) |
-| **Spatial** | Neighbor list + lateral interactions | 4-NN (2D) / 6-NN (3D) with PBC, pairwise repulsion/attraction |
-| **Electrochemistry** | Butler-Volmer PCET rates | Potential-dependent barriers, BEP relations |
-| **Mean-field** | ODE steady-state solver | SciPy fsolve (Python), Newton-Raphson with damped line search (Rust) |
-| **Polarization** | j-U curves from DFT data | Cubic spline interpolation of constant-potential DFT barriers |
-| **Rate parser** | kmos-compatible expressions | `kB*T/h*exp(-(Ea + beta_BV*U)*eV/(kB*T))` |
-| **I/O** | SPARKIN + YAML + JSON + Python API | VASP-style input files, YAML, JSON, or programmatic |
+### Lattice KMC (spark.engine)
+
+- BKL rejection-free algorithm with O(1) bookkeeping
+- Pairwise lateral interactions, BEP relations, Butler-Volmer electrochemical rates
+- **Multi-lattice support** (Hoffmann-Reuter-Scheffler 2015): super-lattice with N coexisting `Layer`s, cross-layer "lattice-swap" elementary processes for morphological transitions. See [`docs/multi_lattice_design.md`](docs/multi_lattice_design.md).
+- Quantitatively validated against `kmos` and `Zacros 4.0` on HER/Pt(111) (< 2% deviation across 11 potential points)
+
+### Off-Lattice On-the-Fly KMC (spark.offlattice)
+
+- Ported from openFLY (C++): dimer saddle search, 3-step environment matching, mechanism catalogue with symmetry exploitation, Basin / SuperBasin / SuperCache (bac-MRM) acceleration
+- **Rust acceleration** via `spark_rs` PyO3 wheel — 3.08× wall-time speedup on Cu(100) slab + 20× saddle-search convergence-rate gain (rotor-sign bug discovered + fixed during Rust port; mirrored to Python)
+
+### Dynamic Catalytic KMC (spark.dynamic)
+
+- DynamicSurface with mutable site identity (graph-based, weak-lattice)
+- Environment-dependent rates via `RateEstimator` protocol; swappable backends (lookup table / ML surrogate / GNN)
+- Unified catalytic + structural event system with EventCache (100 % hit rate on PdAu CO oxidation benchmark, 50 k steps)
+
+### Microkinetic Modeling (spark.microkinetic)
+
+- Mean-field ODE steady-state solver with continuation-fsolve + LSODA-relax + fsolve polish (handles ill-conditioned Jacobians at near-onset polarization, validated against kMCOS)
+- Cubic-spline interpolation of constant-potential DFT barriers
+- Tafel-slope analysis, polarization curves, j(U) plotting
 
 ---
 
 ## Installation
 
-### Python
-
-Requires Python >= 3.8, NumPy, SciPy, PyYAML (`pip install pyyaml`).
+### Quick: Python only (no Rust)
 
 ```bash
+pip install numpy scipy ase pyyaml
 git clone https://github.com/WanluLigroupUCSD/SPARK.git
 cd SPARK
-pip install numpy scipy matplotlib pyyaml
+pip install -e .
 ```
 
-No `pip install` step -- import directly:
+`spark` is now importable. All Python-only features work, including off-lattice KMC (slower path).
 
-```python
-from spark import load_model, KMCEngine, MicroKineticModel
-```
+### Full: Python + Rust acceleration (recommended for off-lattice)
 
-### Rust (optional)
+You need `rustc 1.70+` and `cargo`:
 
 ```bash
+# Install Rust toolchain (Linux/macOS)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Install maturin + clone SPARK
+pip install maturin
+git clone https://github.com/WanluLigroupUCSD/SPARK.git
+cd SPARK
+
+# Build the spark_rs wheel
 cd spark-rs
-cargo build --release
-# Binary: spark-rs/target/release/spark
+maturin build --release         # produces target/wheels/spark_rs-*.whl
+pip install --force-reinstall target/wheels/spark_rs-*.whl
+cd ..
+
+# Install the Python package
+pip install -e .
 ```
+
+Verify:
+
+```python
+>>> import spark
+>>> import spark_rs
+>>> spark_rs.hello()
+'spark-rs is alive'
+>>> spark_rs.version()
+'0.4.0'
+```
+
+### HPC: cross-account toolchain (KAUST Shaheen)
+
+If you don't have Rust installed but a colleague does, you can use their toolchain:
+
+```bash
+# Owner of the rust install:
+chmod -R o+rX ~/.cargo ~/.rustup
+chmod o+x ~
+
+# Builder:
+export RUSTUP_HOME=/home/<rust-owner>/.rustup
+export PATH=/home/<rust-owner>/.cargo/bin:$PATH
+export CARGO_HOME=/scratch/<your-id>/.cargo    # private build cache
+cd /path/to/SPARK/spark-rs
+python -m maturin build --release
+python -m pip install --force-reinstall target/wheels/spark_rs-*.whl
+```
+
+This is what we did for ai-kmc on Shaheen (reny0b's rustc 1.94.0 → wangc0i's gs env wheel).
 
 ---
 
 ## Quick Start
 
-### Option A: Input file (recommended)
-
-VASP-style `TAG = VALUE` format. One file, self-documenting:
-
-```
-# her_model.sparkin
-
-SYSTEM    = HER_Pt111
-SURFACE   = Pt(111)             (auto-sets lattice constant)
-TEMP      = 298                 (K)
-POTENTIAL = -0.2                (V vs RHE)
-SPECIES   = H                   (* is always implicit)
-
-REACTION  = Volmer_fwd : * -> H : 0.67 : electrochemical : 0.5
-REACTION  = Volmer_rev : H -> * : 0.62 : electrochemical : -0.5
-REACTION  = Tafel : H + H -> * + * : 0.85
-REACTION  = Heyrovsky : H -> * : 0.70 : electrochemical : 0.5
-DIFFUSION = H : 0.10
-
-LATERAL   = H-H : 0.10         (eV, positive = repulsive)
-BEP       = Volmer_fwd : 0.5
-
-LSIZE     = 20 20
-NEQUIL    = 100000
-NSTEPS    = 100000
-```
-
-Load and run:
+### Lattice KMC: HER on Pt(111)
 
 ```python
-from spark import load_model, KMCEngine
-
-pt = load_model('her_model.sparkin')
-size = pt.meta.get('lsize', [20, 20])
-engine = KMCEngine(pt, size=size, print_rates=True)
-engine.do_steps(100000)
-print(engine.get_coverage())
-```
-
-### Option B: Python API
-
-```python
-from spark import Project, Site, Condition, Action
-import numpy as np
+from spark.types import Project, Site, Condition, Action
+from spark.engine import KMCEngine
 
 pt = Project()
-pt.set_meta(model_name='CO_on_Pd100', model_dimension=2)
-pt.add_species(name='empty', color='#ffffff')
-pt.add_species(name='CO', color='#ff0000')
+pt.set_meta(model_name="HER_Pt111", model_dimension=2)
+pt.add_species(name="empty")
+pt.add_species(name="H")
 
-layer = pt.add_layer(name='surface')
-layer.sites.append(Site(name='hollow', pos=(0.5, 0.5, 0.5), default_species='empty'))
-pt.lattice.cell = np.diag([3.5, 3.5, 10.0])
+layer = pt.add_layer(name="Pt111")
+layer.sites.append(Site(name="top", default_species="empty"))
+top = pt.lattice.generate_coord("top")
 
-pt.add_parameter(name='T', value=600.0)
-pt.add_parameter(name='p_CO', value=1.0)
-pt.add_parameter(name='A', value='(3.5*angstrom)**2')
-pt.add_parameter(name='deltaG', value=-0.5)
-
-coord = pt.lattice.generate_coord('hollow')
 pt.add_process(
-    name='CO_adsorption',
-    rate_constant='p_CO*bar*A/sqrt(2*pi*umass*m_CO/beta)',
-    conditions=[Condition(coord=coord, species='empty')],
-    actions=[Action(coord=coord, species='CO')],
-    tof_count={'CO_adsorption': 1},
+    name="Volmer",
+    conditions=[Condition(top, "empty")],
+    actions=[Action(top, "H")],
+    rate_constant="1e8 * exp(-0.5*beta*eV * (E_Volmer + beta_BV*U))",
 )
+
+eng = KMCEngine(pt, size=[20, 20])
+eng.do_steps(10000)
+print(eng.get_coverage("H"))
+```
+
+See `models/her_Pt111.py` and `validate_her.py` for a complete benchmark.
+
+### Multi-Lattice KMC: Pd(100) ↔ √5-PdO oxide reduction
+
+```python
+from spark.types import Project, Site, Condition, Action
+from spark.engine import KMCEngine
+
+pt = Project()
+pt.set_meta(model_name="Pd100_PdO", model_dimension=2)
+pt.add_species(name="empty")
+pt.add_species(name="CO")
+pt.add_species(name="O")
+pt.add_species(name="frozen")  # disabled-site marker (see docs/multi_lattice_design.md)
+
+# Two coexisting sub-lattices on a shared super-cell
+pd100 = pt.add_layer(name="Pd100")
+pd100.sites.append(Site(name="hollow", default_species="frozen"))
+pd100.sites.append(Site(name="bridge", default_species="frozen"))
+
+pdo = pt.add_layer(name="PdO")
+pdo.sites.append(Site(name="bridge", default_species="empty"))
+pdo.sites.append(Site(name="Olat",   default_species="O"))
+
+# Cross-layer "destruct" process: CO + lattice O → CO2 (g), uncovers Pd hollow
 pt.add_process(
-    name='CO_desorption',
-    rate_constant='kB*T/h*exp(-(-deltaG)*eV/(kB*T))',
-    conditions=[Condition(coord=coord, species='CO')],
-    actions=[Action(coord=coord, species='empty')],
-    tof_count={'CO_desorption': 1},
+    name="destruct",
+    conditions=[
+        Condition(pt.lattice.generate_coord("bridge.(0,0,0).PdO"), "CO"),
+        Condition(pt.lattice.generate_coord("Olat.(0,0,0).PdO"),   "O"),
+        Condition(pt.lattice.generate_coord("hollow.(0,0,0).Pd100"), "frozen"),
+    ],
+    actions=[
+        Action(pt.lattice.generate_coord("bridge.(0,0,0).PdO"), "empty"),
+        Action(pt.lattice.generate_coord("Olat.(0,0,0).PdO"),   "empty"),
+        Action(pt.lattice.generate_coord("hollow.(0,0,0).Pd100"), "empty"),
+    ],
+    rate_constant="1e9",
 )
+# ... add ads/des processes on each layer ...
+
+eng = KMCEngine(pt, size=[8, 8])
+eng.do_steps(50000)
 ```
 
-### Running KMC
+See `examples/multi_lattice_PdO_reduction.py` for the full toy model.
+
+### Off-Lattice OTF KMC (Rust-accelerated)
 
 ```python
-from spark import KMCEngine
+import numpy as np
+from ase.build import bulk
+from ase.calculators.emt import EMT
+from spark_rs import dimer_find_saddle, fire_minimize
 
-engine = KMCEngine(pt, size=[20, 20], print_rates=True)
-engine.do_steps(100000)           # equilibration
-engine.get_tof()                  # reset TOF baseline
-engine.do_steps(100000)           # production
+atoms = bulk("Cu", "fcc", a=3.6) * (3, 3, 3)
+del atoms[0]                     # vacancy
+atoms.calc = EMT()
 
-print(engine.get_coverage())      # {'CO': 0.498, 'empty': 0.502}
-print(engine.get_tof())           # {'CO_adsorption': 1.23e6, ...}
-```
+def force_callback(positions):
+    atoms.set_positions(positions)
+    return atoms.get_potential_energy(), atoms.get_forces()
 
-### Mean-field microkinetics
-
-```python
-from spark import MicroKineticModel
-from spark.rates import tst_rate
-
-mkm = MicroKineticModel()
-mkm.add_species('N2')
-mkm.add_species('NNH')
-mkm.add_reaction(
-    name='N2_hydrogenation',
-    reactants={'N2': 1}, products={'NNH': 1},
-    rate_fwd=lambda p: tst_rate(2.82, p['T']),
-    rate_rev=lambda p: tst_rate(1.50, p['T']),
+# Saddle search via Rust dimer
+result = dimer_find_saddle(
+    atoms.get_positions(),
+    np.random.randn(len(atoms), 3) / np.sqrt(3*len(atoms)),
+    force_callback,
+    f_tol=0.05, max_steps=100,
 )
-mkm.parameters = {'T': 300, 'U': -0.5}
-ss = mkm.solve_steady_state()
-mkm.print_summary(ss)
+print("status:", result["status"], "  energy:", result["energy"])
 ```
 
-### Electrochemical features
+See `tests/` for cargo unit tests + `phase_d_bench2.py` for a Cu(100) benchmark comparing Rust vs Python.
+
+### Dynamic Catalytic KMC: PdAu(111) CO oxidation with segregation
 
 ```python
-# Lateral interactions
-pt.add_lateral_interaction('H', 'H', energy=0.10)  # repulsive NN
+from spark.dynamic import DynamicSurface, DynamicKMCEngine, EventGenerator, LookupTableEstimator
 
-# BEP relation
-pt.add_bep_relation('Volmer_fwd', alpha=0.5)
+surf = DynamicSurface(n_sites=225)
+# ... populate sites with Pd/Au atom_type, build NN graph ...
 
-# Polarization curve
-from spark.polarization import PolarizationCurve
-pc = PolarizationCurve(mkm, n_electrons={'H2_production': 2}, A_site=(2.775e-10)**2)
-results = pc.compute(U_range=np.linspace(-0.5, 0, 11), T=298)
+engine = DynamicKMCEngine(
+    surface=surf,
+    event_generator=EventGenerator(species_list=["empty", "CO", "O"]),
+    rate_estimator=LookupTableEstimator(),
+    temperature=500.0,
+)
+engine.run(max_steps=50000)
 ```
+
+See `examples/dynamic_PdAu_CO_oxidation.py` for the full setup.
 
 ---
 
-## Input Format Reference
-
-### SPARKIN format (VASP-style)
-
-`TAG = VALUE` format with `(...)` inline comments. `#` for line comments.
-
-**Tags:**
-
-| Tag | Description | Example |
-|-----|-------------|---------|
-| `SYSTEM` | Model name | `SYSTEM = HER_Pt111` |
-| `SURFACE` | Surface preset | `SURFACE = Pt(111)` |
-| `LATTICE` | Custom cell (A) | `LATTICE = 3.5 3.5 10.0` |
-| `TEMP` | Temperature (K) | `TEMP = 298` |
-| `POTENTIAL` | Potential (V vs RHE) | `POTENTIAL = -0.2` |
-| `SPECIES` | Surface species | `SPECIES = H CO` |
-| `PARAMETER` | Custom parameter | `PARAMETER = p_CO 1.0` |
-| `REACTION` | Elementary step | see below |
-| `DIFFUSION` | NN hop (auto-expand) | `DIFFUSION = H : 0.10` |
-| `LATERAL` | Pair interaction (eV) | `LATERAL = H-H : 0.10` |
-| `BEP` | BEP relation | `BEP = Volmer_fwd : 0.5` |
-| `LSIZE` | Lattice size | `LSIZE = 20 20` |
-| `NEQUIL` | Equilibration steps | `NEQUIL = 100000` |
-| `NSTEPS` | Production steps | `NSTEPS = 100000` |
-
-**REACTION format** -- colon-separated fields:
-
-```
-REACTION = name : equation : Ea(eV) [: type : beta]
-REACTION = name : equation : rate=expression
-```
-
-- Thermal (default): `name : * -> H : 0.85`  -->  `kBT/h * exp(-Ea/kBT)`
-- Electrochemical: `name : * -> H : 0.67 : electrochemical : 0.5`  -->  `kBT/h * exp(-(Ea+beta*U)/kBT)`
-- Custom rate: `name : CO -> * : rate=kB*T/h*exp(-0.5*eV/(kB*T))`
-
-**Reaction string**: `*` = empty/vacant site. `+` separates multi-site participants (2nd site is neighbor by default).
-
-**Surface presets:**
-
-| Preset | a (A) | Site | Preset | a (A) | Site |
-|--------|-------|------|--------|-------|------|
-| Pt(111) | 2.775 | top | Cu(111) | 2.556 | top |
-| Pt(100) | 2.775 | hollow | Cu(100) | 2.556 | hollow |
-| Pd(111) | 2.751 | top | Au(111) | 2.884 | top |
-| Ni(111) | 2.492 | top | Ru(0001) | 2.706 | top |
-
-### YAML format (alternative)
-
-Also supported for complex models. See [`examples/her_Pt111.yaml`](examples/her_Pt111.yaml).
-
----
-
-## Benchmark
-
-HER on Pt(111) with identical parameters across all three engines:
-
-- 4 elementary steps (Volmer fwd/rev, Tafel, Heyrovsky)
-- Square lattice 20x20, T = 298 K, U = 0 to -0.5 V
-- Lateral interactions: H-H repulsion (+0.10 eV)
-- BEP on Volmer (alpha = 0.5)
-
-<p align="center">
-  <img src="benchmark/fig_benchmark_comparison.png" width="800">
-</p>
-
-**Key results:**
-- Current density agreement: average relative error ~1.4% (stochastic noise)
-- Coverage plateau at theta_H ~ 0.34, governed by H-H repulsion
-- Heyrovsky pathway dominates; Tafel slope ~120 mV/dec
-- Speed: Zacros (12s) > kmos (20s) > SPARK-Python (281s)
-
-Full data tables: [`benchmark/BENCHMARK_SUMMARY.md`](benchmark/BENCHMARK_SUMMARY.md)
-
----
-
-## Project Structure
+## Repository Layout
 
 ```
 SPARK/
-├── spark/                    # Python package
-│   ├── io.py                 #   YAML/JSON model loader
-│   ├── engine.py             #   BKL KMC engine
-│   ├── microkinetic.py       #   Mean-field ODE solver
-│   ├── polarization.py       #   Polarization curves & DFT interpolation
-│   ├── rates.py              #   Rate expression parser
-│   ├── types.py              #   Data model (Project, Species, Process, ...)
-│   ├── analysis.py           #   Trajectory recording, TOF, steady-state
-│   └── units.py              #   Physical constants
-├── spark-rs/                 # Rust implementation
-│   └── src/
-│       ├── engine.rs         #   BKL + Fenwick tree
-│       ├── microkinetic.rs   #   Newton-Raphson solver
-│       ├── polarization.rs   #   Cubic spline interpolation
+├── spark/                         # Python package
+│   ├── types.py                   # Project / Layer / Site / Process / LateralInteraction
+│   ├── engine.py                  # Lattice + multi-lattice KMC engine
+│   ├── microkinetic.py            # Mean-field ODE solver (with v3 SS-robustness patch)
+│   ├── polarization.py            # j-U polarization curves from DFT data
+│   ├── rates.py                   # kmos-compatible rate expression parser
+│   ├── indexing.py                # Multi-lattice spuck-based 1D site indexing
+│   ├── offlattice/                # On-the-fly off-lattice KMC (Python reference)
+│   │   ├── engine.py              # SKMCEngine main loop (10 steps)
+│   │   ├── catalogue.py           # 3-step environment matching + symmetry
+│   │   ├── saddle.py              # Dimer search + SaddleMaster (use spark_rs for hot loop)
+│   │   ├── minimize.py            # scipy L-BFGS-B minimizer (use spark_rs for hot loop)
+│   │   ├── basin.py               # Basin acceleration
+│   │   ├── superbasin.py          # SuperBasin acceleration (bac-MRM)
+│   │   ├── cache.py               # SuperCache event caching
+│   │   └── ...
+│   └── dynamic/                   # Dynamic catalytic KMC
+│       ├── surface.py             # Mutable graph-based surface
+│       ├── events.py              # Catalytic + structural event generators
 │       └── ...
-├── examples/                 # Example input files
-│   ├── her_Pt111.sparkin     #   HER on Pt(111) -- VASP-style format
-│   ├── co_adsorption.sparkin #   CO/Pd(100) -- VASP-style format
-│   ├── her_Pt111.yaml        #   HER on Pt(111) -- YAML alternative
-│   └── co_adsorption.yaml    #   CO/Pd(100) -- YAML alternative
-├── models/                   # Pre-built reaction models (Python)
-│   ├── her_Pt111.py          #   HER on Pt(111)
-│   ├── n2_reduction_Mo.py    #   N2 reduction on Mo
-│   └── co_adsorption_test.py #   CO/Pd(100) test
-├── benchmark/                # 3-engine benchmark (SPARK vs kmos vs Zacros)
-├── tutorial.py               # 7-part interactive tutorial
-├── validate_her.py           # HER validation suite
-└── run_simulation.py         # CLI simulation driver
+│
+├── spark-rs/                      # Rust acceleration crate (PyO3 wheel)
+│   ├── src/
+│   │   ├── lib.rs                 # Crate root + #[pymodule] _native registration
+│   │   ├── main.rs                # Standalone CLI binary `spark`
+│   │   ├── engine.rs              # Lattice KMC core (Fenwick tree)
+│   │   ├── microkinetic.rs        # MKM (Newton-Raphson with damped LS)
+│   │   ├── polarization.rs        # j-U interpolation
+│   │   ├── python_bindings.rs     # PyO3 dimer_find_saddle + fire_minimize + PyCalculator
+│   │   └── offlattice/
+│   │       ├── calc.rs            # Calculator trait + MullerBrown + QuadraticSaddle
+│   │       ├── minimize.rs        # FIRE pure Rust
+│   │       ├── saddle.rs          # DimerSearch (rotate + effective_gradient + collision)
+│   │       ├── catalogue.rs       # Environment matching + mechanism storage
+│   │       ├── basin.rs / superbasin.rs / cache.rs
+│   │       └── engine.rs          # SKMCEngine framework
+│   ├── python/spark_rs/           # Python package (re-exports from _native.so)
+│   ├── Cargo.toml                 # `python` feature gates pyo3/numpy
+│   └── pyproject.toml             # maturin build-backend
+│
+├── tests/                         # Python unit tests
+│   ├── test_multi_lattice_indexing.py    # 11 tests, multi-lattice site indexing
+│   └── test_cross_layer_process.py       # 3 tests, cross-layer process firing
+│
+├── examples/
+│   ├── dynamic_PdAu_CO_oxidation.py
+│   ├── offlattice_fe_vacancy.py
+│   └── multi_lattice_PdO_reduction.py    # 64-cell Pd100+PdO toy, full reduction in 50k steps
+│
+├── models/
+│   ├── her_Pt111.py
+│   ├── n2_reduction_Mo.py
+│   └── co_adsorption_test.py
+│
+├── benchmark/                     # Validation against kmos / Zacros 4.0
+├── docs/
+│   ├── multi_lattice_design.md   # Hoffmann-Reuter 2015 algorithm + SPARK implementation
+│   ├── DFT_methodology.md
+│   ├── tutorial.md
+│   └── ...
+│
+├── validate_her.py                # 6-test HER/Pt(111) regression suite (~210 s)
+├── tutorial.py
+└── README.md
 ```
 
 ---
 
-## Rust CLI Reference
+## Validation & Tests
+
+| Test | Coverage | Wall time | Last status |
+|---|---|---|---|
+| `validate_her.py` | 6 HER tests (Langmuir / Tafel / lateral / diffusion / KMC vs MKM / size convergence) | ~210 s | **6/6 PASS** (2026-05-01) |
+| `tests/test_multi_lattice_indexing.py` | 11 tests on multi-lattice spuck-based 1D indexing | < 1 s | **11/11 PASS** |
+| `tests/test_cross_layer_process.py` | 3 tests on cross-layer process firing | < 1 s | **3/3 PASS** |
+| `examples/multi_lattice_PdO_reduction.py` | 8×8 super-cell, 50k steps, full Pd100/PdO reduction cycle | ~1 s | **64/64 cells reduced, 0 invariant violations** |
+| `cargo test --release --lib` (in `spark-rs/`) | 33 Rust unit tests covering Calculator / FIRE / DimerSearch / catalogue / basin etc. | < 5 s | **33/33 PASS** |
+| Cu(100) 47-atom slab benchmark (N=20 dimer searches) | Rust vs Python equivalence + speedup | ~7 s | Rust 20/20 success, 3.08× faster than Python; Python 1/20 success before sign fix → 20/20 after |
+
+Run them all:
 
 ```bash
-spark kmc   --t 300 --u -1.0 --size 20 --steps 1000000   # Lattice KMC
-spark mkm   --t 300 --u -1.0                               # Mean-field steady state
-spark scan-u --t 300 --u-min -0.5 --u-max -3.0             # Potential scan
-spark scan-t --u -1.0 --t-min 250 --t-max 500              # Temperature scan
-spark polarization --dft-data dft.json --t 300              # Polarization curve
-spark validate                                              # Langmuir isotherm test
+# Python regressions
+python validate_her.py
+python -m pytest tests/                    # if pytest installed
+python examples/multi_lattice_PdO_reduction.py
+
+# Rust unit tests (no Python needed)
+cd spark-rs && cargo test --release --lib
 ```
 
-All commands support `--cycle` flag for pure catalytic cycle mode (no adsorption/desorption).
+---
+
+## Performance Notes
+
+### Off-lattice OTF saddle search
+
+| | Per dimer search (47-atom Cu(100) slab) | Convergence rate (N=20) |
+|---|---|---|
+| Python `spark.offlattice.DimerSearch` | 260.6 ms | 1/20 (before 2026-05-01 rotor-sign fix) → ~20/20 (after) |
+| Rust `spark_rs.dimer_find_saddle` | 84.5 ms | 20/20 |
+
+**3.08× wall-time speedup** + **20× convergence-rate gain pre-fix** (Python now matches Rust after `8fd2166`). Speedup attributable to:
+- Rust dimer rotation arithmetic (no numpy alloc per inner step)
+- Trust-radius adapt + collision check inside Rust
+- Single Python ↔ Rust crossing per force eval (instead of per-arithmetic)
+
+Force eval (ASE EMT or any ASE calculator) stays Python — that's why the speedup is 3× rather than 30×. For systems where force eval dominates (DFT, MACE), the proportional gain is smaller; for systems where Python overhead dominates (small EMT), it's larger.
+
+### Lattice KMC cross-validation (HER/Pt(111))
+
+| Engine | Language | θ_H | j (current density) | Wall time |
+|---|---|---|---|---|
+| **SPARK** | Python | 0.338 | reference | 281 s |
+| `kmos` | Python + Fortran | 0.332 | < 2% deviation | 20 s |
+| `Zacros 4.0` | Fortran | 0.341 | < 2% deviation | 12 s |
+
+All three agree within stochastic noise across 11 potential points (0 to -0.5 V vs RHE). See [`benchmark/BENCHMARK_SUMMARY.md`](benchmark/BENCHMARK_SUMMARY.md).
 
 ---
 
-## Algorithm
+## Algorithm References
 
-### KMC: BKL Rejection-Free (VSSM / n-fold way)
-
-Each step:
-1. Compute cumulative rates R_i
-2. Draw random numbers r1, r2, r3
-3. Advance time: dt = -ln(r1) / R_total
-4. Select process (binary search on r2 * R_total)
-5. Select site (uniform from available sites)
-6. Execute and update bookkeeping
-
-Rust optimizations: Fenwick tree site selection, flat lateral energy arrays, zero-allocation coordinates, periodic rebuild to prevent float drift.
-
-### Mean-Field Solver
-
-Solves dtheta_i/dt = sum_j(nu_ij * r_j) to steady state.
-
-- **Python**: `scipy.optimize.fsolve`
-- **Rust**: Euler pre-equilibration (dt: 1e-15 -> 1s) + Newton-Raphson with damped line search; typically 5-10 iterations
+| Module | Primary reference |
+|---|---|
+| Lattice BKL KMC | Bortz, Kalos, Lebowitz, *J. Comput. Phys.* **17**, 10 (1975) |
+| **Multi-Lattice kMC** | **Hoffmann, Scheffler, Reuter, *ACS Catal.* **5**, 1199 (2015), DOI 10.1021/cs501352t** |
+| Dimer saddle search | Henkelman & Jónsson, *J. Chem. Phys.* **111**, 7010 (1999) |
+| FIRE minimizer | Bitzek, Koskinen, Gähler, Moseler, Gumbsch, *PRL* **97**, 170201 (2006) |
+| Off-lattice on-the-fly KMC framework | openFLY (C++); ported into SPARK as `spark.offlattice` and `spark-rs/src/offlattice/` |
+| bac-MRM SuperBasin | Mason, Hudson, Pellet-Mary, *J. Chem. Theory Comput.* **17**, 5779 (2021) |
+| Butler-Volmer PCET barriers | Nørskov et al., *J. Phys. Chem. B* **108**, 17886 (2004) |
+| BEP / kinetic scaling | Brønsted, *Chem. Rev.* **5**, 231 (1928); Evans & Polanyi, *Trans. Faraday Soc.* **32**, 1340 (1936) |
 
 ---
 
-## Performance
+## Citing SPARK
 
-| Benchmark | Rust | Python |
-|-----------|------|--------|
-| CO Langmuir validation (5 x 700k steps) | 3.7 s | ~80 s |
-| HER benchmark (11 potentials, 100k steps each) | -- | 281 s |
-| Potential scan (31 points, MKM) | 0.6 s | ~2 s |
-| Binary size | 1.6 MB | -- |
-
----
-
-## Documentation
-
-- **[`docs/tutorial.md`](docs/tutorial.md)** -- Complete tutorial: SPARKIN format, KMC, MKM, polarization, advanced features
-- [`examples/`](examples/) -- Example input files (.sparkin, .yaml)
-- [`tutorial.py`](tutorial.py) -- Interactive Python tutorial (7 parts)
-- [`benchmark/BENCHMARK_SUMMARY.md`](benchmark/BENCHMARK_SUMMARY.md) -- Full 3-engine benchmark data
-- [`docs/`](docs/) -- DFT methodology, research plans, software comparison
-
----
-
-## Citation
-
-```bibtex
-@software{spark_kmc,
-  title  = {SPARK: SPatial Atomistic Reaction Kinetics},
-  author = {Wanlu Li Group},
-  url    = {https://github.com/WanluLigroupUCSD/SPARK},
-  year   = {2026}
-}
-```
+If SPARK contributes to a publication, please cite the relevant algorithm references above and mention `SPARK <commit-hash>` from this repository.
 
 ---
 
 ## License
 
-MIT License
+MIT — see [`LICENSE`](LICENSE).
 
-## Acknowledgments
+The Rust crate `spark-rs` reads `kmcos` (GPL v3) source for **algorithmic ideas only** in implementing multi-lattice support; no code is copied. SPARK remains MIT-licensed.
 
-- KMC algorithm inspired by [kmos](https://github.com/mhoffman/kmos) (M. Hoffmann et al.)
-- Benchmark validated against [Zacros](https://zacros.org/) (M. Stamatakis)
-- Developed at the [Wanlu Li Group](https://wanluligroup.ucsd.edu/), UC San Diego
+---
+
+## Status (2026-05-01)
+
+- ✅ Lattice KMC + multi-lattice (Hoffmann-Reuter 2015) end-to-end
+- ✅ Off-lattice OTF KMC algorithm complete (Python reference + Rust hot-loop acceleration)
+- ✅ Dynamic catalytic KMC V1 (DynamicSurface + EventCache) with PdAu CO oxidation benchmark
+- ✅ Microkinetic v3 SS-robustness patch (handles ill-conditioned Jacobians at near-onset polarization)
+- ✅ Rust acceleration via PyO3 wheel — 3.08× speedup, abi3 forward-compatible (one wheel for cpython ≥ 3.10)
+- ⏳ Off-lattice catalytic demo (Cu(100) + adsorbates, S2.10 in roadmap) — pending; current off-lattice example is BCC Fe vacancy
+- ⏳ `spark.offlattice` Mechanism doesn't yet support adsorption/desorption (`delta_fwd.shape=(n_local, 3)` locks atom count) — workaround on roadmap
+
+See [`docs/multi_lattice_design.md`](docs/multi_lattice_design.md) for design notes on the multi-lattice port.
