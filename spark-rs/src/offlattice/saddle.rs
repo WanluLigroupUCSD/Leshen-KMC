@@ -416,9 +416,9 @@ mod tests {
         // Start halfway between minimum and saddle, with axis pointing roughly
         // along the SP direction.
         let start_pos = vec![[-0.7, 1.0, 0.0]];
-        let dx0 = -0.822 - (-0.7);
-        let dy0 =  0.624 -  1.0;
-        let n0 = (dx0*dx0 + dy0*dy0).sqrt();
+        let dx0: f64 = -0.822 - (-0.7);
+        let dy0: f64 =  0.624 -  1.0;
+        let n0: f64 = (dx0*dx0 + dy0*dy0).sqrt();
         let start_axis = vec![[dx0/n0, dy0/n0, 0.0]];
 
         let mut params = DimerParams::default();
