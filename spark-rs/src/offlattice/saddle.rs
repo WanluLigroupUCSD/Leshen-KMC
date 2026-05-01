@@ -265,7 +265,17 @@ fn rotate_dimer<C: Calculator>(
         }
         curvature = dot_flat(&dg, &axis) / (2.0 * h);
 
-        // Torque = (dg / 2h) - ((dg / 2h) · axis) * axis
+        // Rotor "torque" — we want to MINIMIZE curvature κ(N̂) = dg·N̂/(2h).
+        // ∇_{N̂} κ = dg/(2h), so to decrease κ we step in direction -dg/(2h),
+        // projected perpendicular to N̂ (to keep |N̂|=1).
+        //
+        //   rotor_dir = -[dg/(2h) - (dg/(2h) · N̂) N̂]
+        //
+        // Equivalent: just negate the perpendicular projection of dg/(2h).
+        // NB: This sign matters! Without it the rotor walks toward the
+        // *highest* curvature direction (porting bug carried from openFLY
+        // path through spark/offlattice/saddle.py — fixed here, fix in
+        // Python landed at d5267c6+).
         let mut dg_per_2h = dg;
         for i in 0..n {
             for d in 0..3 {
@@ -275,9 +285,9 @@ fn rotate_dimer<C: Calculator>(
         let proj = dot_flat(&dg_per_2h, &axis);
         let mut torque: Vec<[f64; 3]> = dg_per_2h.iter().enumerate()
             .map(|(i, v)| [
-                v[0] - proj * axis[i][0],
-                v[1] - proj * axis[i][1],
-                v[2] - proj * axis[i][2],
+                -(v[0] - proj * axis[i][0]),
+                -(v[1] - proj * axis[i][1]),
+                -(v[2] - proj * axis[i][2]),
             ])
             .collect();
         if let Some(m) = frozen {
