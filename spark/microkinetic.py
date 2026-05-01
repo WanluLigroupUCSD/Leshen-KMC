@@ -191,11 +191,109 @@ class MicroKineticModel:
             theta = np.clip(theta, 0.0, 1.0)
             return self._build_odes(theta)
 
-        result, info, ier, msg = fsolve(
-            equations, theta0, full_output=True)
+        # Tight tolerance + residual verification. If continuation gives a
+        # high-residual solution, fall back to ODE integration from the
+        # continuation state to smoothly relax to a proper SS, THEN polish
+        # with fsolve.
+        #
+        # Rationale (2026-04-23 cross-validation on Shaheen kMCOS):
+        # - Default fsolve xtol=1.49e-8 causes false convergence in near-onset
+        #   regimes where the Jacobian is near-singular (rate spans 10^20).
+        # - Continuation (theta0 from previous SS) is the KEY to staying in
+        #   the physical (LIVE) basin across a polarization scan. Multi-guess
+        #   strategies can flip into DEAD basins (species-saturated, TOF=0).
+        # - When continuation+fsolve fails to reach SS, ODE integration from
+        #   the current state gives the physically reachable basin reliably.
+        def _ode_relax_then_fsolve(start_theta, t_end=1.0, timeout_sec=3):
+            """Integrate ODE from start_theta to approach SS, then fsolve.
+
+            2026-04-28 v3 patch: hard signal.alarm timeout 3s per call.
+            Even LSODA with t_end=10 deadlocked W Distal near onset (U=+0.030V
+            in GS convention, where rates span 10^20 and Jacobian is near
+            singular). The fix is a non-negotiable wall-clock cap on the ODE
+            attempt; if it fails we fall through to the continuation fsolve
+            result rather than perfect SS.
+            """
+            import signal
+            class _OdeTimeout(Exception): pass
+            def _on_alarm(signum, frame): raise _OdeTimeout()
+            old_handler = signal.signal(signal.SIGALRM, _on_alarm)
+            signal.alarm(timeout_sec)
+            try:
+                ode_sol = solve_ivp(
+                    lambda t, y: self._build_odes(y),
+                    (0.0, t_end), np.clip(start_theta, 0.0, 1.0),
+                    method='LSODA', rtol=1e-5, atol=1e-10,
+                    max_step=t_end * 0.1, first_step=1e-9,
+                )
+                signal.alarm(0)
+                theta_dyn = ode_sol.y[:, -1]
+                r2, _, _, _ = fsolve(
+                    equations, theta_dyn, full_output=True,
+                    xtol=1e-12, maxfev=2000)
+                return r2, float(np.max(np.abs(equations(r2))))
+            except (_OdeTimeout, Exception):
+                return None, float('inf')
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+
+        def _tof_score(x):
+            """Total TOF flux (coverage-weighted) from tagged reactions."""
+            if x is None:
+                return 0.0
+            x_clip = np.clip(x, 0.0, 1.0)
+            te = max(1.0 - np.sum(x_clip), 0.0)
+            cov = {"empty": te, "*": te}
+            for i, name in enumerate(self.species):
+                cov[name] = float(x_clip[i])
+            tot = 0.0
+            for rxn in self.reactions:
+                if not rxn['tof_count']:
+                    continue
+                kf = self._get_rate(rxn['rate_fwd'])
+                rf = kf
+                for sp, st in rxn['reactants'].items():
+                    rf *= cov.get(sp, 0.0) ** st
+                rr = 0.0
+                if rxn['rate_rev'] is not None:
+                    kr = self._get_rate(rxn['rate_rev'])
+                    rr = kr
+                    for sp, st in rxn['products'].items():
+                        rr *= cov.get(sp, 0.0) ** st
+                net = rf - rr
+                for c in rxn['tof_count'].values():
+                    tot += abs(c * net)
+            return tot
+
+        # Try two independent approaches and pick the live-basin one.
+        # (1) fsolve from continuation theta0
+        r_cont, info, ier, msg = fsolve(
+            equations, theta0, full_output=True, xtol=1e-12, maxfev=2000)
+        resid_cont = float(np.max(np.abs(equations(r_cont))))
+        tof_cont = _tof_score(r_cont) if resid_cont < 1e-3 else 0.0
+
+        # (2) ODE from clean surface + fsolve polish (reaches live basin)
+        r_ode, resid_ode = _ode_relax_then_fsolve(np.zeros(n))
+        tof_ode = _tof_score(r_ode) if (r_ode is not None and resid_ode < 1e-3) else 0.0
+
+        # Prefer whichever has higher TOF (live basin), with physical filter.
+        def _is_physical(x):
+            if x is None:
+                return False
+            return np.all(x >= -1e-4) and float(np.sum(np.clip(x, 0, 1))) < 1 + 1e-3
+
+        if _is_physical(r_ode) and tof_ode > tof_cont * 1.1:
+            result, resid_max = r_ode, resid_ode
+        elif _is_physical(r_cont) and resid_cont < 1e-3:
+            result, resid_max = r_cont, resid_cont
+        elif _is_physical(r_ode):
+            result, resid_max = r_ode, resid_ode
+        else:
+            result, resid_max = r_cont, resid_cont
 
         theta_ss = np.clip(result, 0.0, 1.0)
-        # Renormalize if total > 1
+        # Renormalize if total > 1 (defensive — should not trigger at converged SS)
         total = np.sum(theta_ss)
         if total > 1.0:
             theta_ss /= total
