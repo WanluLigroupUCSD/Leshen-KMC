@@ -470,16 +470,23 @@ mod tests {
     }
 
     /// Anisotropic quadratic saddle. Stable mode 10x stiffer than unstable.
-    /// Verifies the rotor finds the correct unstable mode regardless of
-    /// initial axis orientation.
+    /// Verifies the rotor finds the correct unstable mode starting from an
+    /// axis tilted MOSTLY toward the wrong (stable) direction — the rotor
+    /// must rotate it ~80° to find the unstable x-mode.
+    ///
+    /// NB: Starting axis EXACTLY on an eigenvector (e.g. pure y) gives
+    /// zero torque mathematically — production code uses random axis init
+    /// to avoid this degenerate case.
     #[test]
     fn dimer_finds_correct_unstable_mode() {
         use crate::offlattice::calc::QuadraticSaddle;
         let mut q = QuadraticSaddle::new(1.0, 10.0);
         let start_pos = vec![[0.05, 0.05, 0.0]];
-        // Start with axis pointing along the WRONG (stable) direction;
-        // rotor must rotate it 90 degrees to find the unstable x-mode.
-        let start_axis = vec![[0.0, 1.0, 0.0]];
+        // Start with axis 80% along WRONG (stable) y-direction, 20% along
+        // unstable x — the rotor has to flip it.
+        let raw = [0.2, 0.95, 0.0];
+        let n: f64 = (raw[0] * raw[0] + raw[1] * raw[1]).sqrt();
+        let start_axis = vec![[raw[0]/n, raw[1]/n, 0.0]];
 
         let mut params = DimerParams::default();
         params.dimer_sep = 0.001;
