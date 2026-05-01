@@ -14,3 +14,12 @@ pub mod basin;
 pub mod superbasin;
 pub mod cache;
 pub mod engine;
+
+// Phase B (2026-05-01): Rust port of the OTF KMC hot loop.
+// `calc` defines the Calculator trait + Müller-Brown reference PES.
+// `minimize` provides FIRE; `saddle` provides the dimer search.
+// All three are pure Rust (no Python dep) so they can be unit-tested via
+// `cargo test --lib` without a Python interpreter.
+pub mod calc;
+pub mod minimize;
+pub mod saddle;
