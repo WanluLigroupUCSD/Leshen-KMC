@@ -83,16 +83,23 @@ impl SuperBasin {
         let to = self.occupied;
         let from = basin_idx;
 
+        // Search and capture the matching mechanism's rate without holding
+        // a mutable borrow of self.basins past the loop.
+        let mut hit_rate: Option<f64> = None;
         for lm in &mut self.basins[basin_idx].mechs {
             if lm.atom_index == atom_index
                 && (lm.mechanism.barrier - mechanism.barrier).abs() < 1e-10
                 && (lm.mechanism.delta - mechanism.delta).abs() < 1e-10
             {
                 lm.exit_mech = false;
-                self.basins[basin_idx].connected = true;
-                self.prob[to][from] = lm.rate / self.basins[basin_idx].rate_sum;
-                return;
+                hit_rate = Some(lm.rate);
+                break;
             }
+        }
+        if let Some(rate) = hit_rate {
+            let rate_sum = self.basins[basin_idx].rate_sum;
+            self.basins[basin_idx].connected = true;
+            self.prob[to][from] = rate / rate_sum;
         }
     }
 

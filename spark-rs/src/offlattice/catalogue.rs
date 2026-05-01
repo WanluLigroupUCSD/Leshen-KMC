@@ -98,8 +98,8 @@ impl Catalogue {
                         if entry.fingerprint.equiv(&fp, delta * self.overfuzz) {
                             if geo.permute_onto(&entry.geometry, delta).is_some() {
                                 self.atoms.push(AtomEnv {
-                                    geo,
-                                    fingerprint: fp,
+                                    geo: geo.clone(),
+                                    fingerprint: fp.clone(),
                                     graph_hash: gh,
                                     entry_idx: Some((nh, ni)),
                                 });
