@@ -484,7 +484,7 @@ mod tests {
         let start_pos = vec![[0.05, 0.05, 0.0]];
         // Start with axis 80% along WRONG (stable) y-direction, 20% along
         // unstable x — the rotor has to flip it.
-        let raw = [0.2, 0.95, 0.0];
+        let raw: [f64; 3] = [0.2, 0.95, 0.0];
         let n: f64 = (raw[0] * raw[0] + raw[1] * raw[1]).sqrt();
         let start_axis = vec![[raw[0]/n, raw[1]/n, 0.0]];
 
