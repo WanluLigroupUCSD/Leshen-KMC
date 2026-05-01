@@ -13,7 +13,7 @@
 
 #![cfg(feature = "python")]
 
-use numpy::{IntoPyArray, PyArray2, PyArrayMethods, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
@@ -50,7 +50,7 @@ impl Calculator for PyCalculator {
                 .collect();
             let pos_arr = numpy::ndarray::Array2::from_shape_vec((n, 3), flat)
                 .expect("positions reshape");
-            let pos_py = pos_arr.into_pyarray(py);
+            let pos_py = pos_arr.into_pyarray_bound(py);
 
             // Call the Python force callback. Expected return: (energy, forces).
             let result = self.callback
@@ -112,7 +112,7 @@ fn vec3_to_pyarray<'py>(py: Python<'py>, v: &[[f64; 3]]) -> Bound<'py, PyArray2<
     let flat: Vec<f64> = v.iter().flat_map(|p| p.iter().copied()).collect();
     numpy::ndarray::Array2::from_shape_vec((n, 3), flat)
         .expect("vec3 reshape")
-        .into_pyarray(py)
+        .into_pyarray_bound(py)
 }
 
 /// Status enum to a Python string matching the Python saddle.py convention.
@@ -212,7 +212,7 @@ pub fn dimer_find_saddle<'py>(
         )
     });
 
-    let dict = PyDict::new(py);
+    let dict = PyDict::new_bound(py);
     dict.set_item("positions", vec3_to_pyarray(py, &result.positions))?;
     dict.set_item("axis",      vec3_to_pyarray(py, &result.axis))?;
     dict.set_item("energy",    result.energy)?;
@@ -285,7 +285,7 @@ pub fn fire_minimize<'py>(
 
     let result = py.allow_threads(|| minimize(&mut calc, &pos_vec, &params));
 
-    let dict = PyDict::new(py);
+    let dict = PyDict::new_bound(py);
     dict.set_item("positions",       vec3_to_pyarray(py, &result.positions))?;
     dict.set_item("energy",          result.energy)?;
     dict.set_item("converged",       result.converged)?;
