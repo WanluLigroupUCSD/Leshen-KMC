@@ -19,6 +19,9 @@ pub mod models;
 pub mod polarization;
 pub mod offlattice;
 
+#[cfg(feature = "python")]
+pub mod python_bindings;
+
 // ---------------------------------------------------------------------------
 // PyO3 entry — exposes a Python module named `spark_rs._native`.
 // All Python-facing code is gated behind the `python` feature so that
@@ -47,5 +50,8 @@ fn version() -> &'static str {
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hello, m)?)?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
+    // Phase C — OTF KMC hot-loop kernels with Python force callback.
+    m.add_function(wrap_pyfunction!(python_bindings::dimer_find_saddle, m)?)?;
+    m.add_function(wrap_pyfunction!(python_bindings::fire_minimize, m)?)?;
     Ok(())
 }
