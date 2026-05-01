@@ -166,40 +166,75 @@ class KMCEngine:
     # ----------------------------------------------------------------
 
     def _init_lattice(self):
-        """Initialize the lattice array with default species and site types."""
+        """Initialize the lattice array with default species and site types.
+
+        Multi-lattice (Hoffmann-Reuter-Scheffler 2015) support:
+
+        - ``ncells = prod(lattice_size)`` is the number of physical unit cells.
+        - ``spuck`` (Sites Per Unit Cell) is the total number of sites within
+          one cell, summed across all layers. Layer membership is encoded in
+          the site-within-cell index via cumulative offsets.
+        - The global flat site index ``nr ∈ [0, ncells*spuck)`` decomposes as
+          ``nr = cell_id * spuck + s_in_cell``.
+        - Per-site defaults (default_species, site_type) are read from each
+          ``Site`` object and tiled across cells, so different sites within
+          the same cell can have different defaults.
+
+        Single-layer 1-site models (the legacy use case) reduce to ``spuck=1``,
+        which gives ``nsites = ncells`` and matches the pre-multi-lattice
+        engine behavior byte-for-byte.
+        """
         self.lattice_size = tuple(self.size[:self.ndim])
-        self.nsites = int(np.prod(self.lattice_size))
+        self.ncells = int(np.prod(self.lattice_size))
 
-        # Determine default species
-        default_sp = 0
-        if self.project.lattice.layers:
-            layer = self.project.lattice.layers[0]
-            if layer.sites:
-                ds_name = layer.sites[0].default_species
+        # spuck: sites per unit cell across all layers (>=1)
+        self.spuck = max(self.project.lattice.spuck, 1)
+        self.nsites = self.ncells * self.spuck
+
+        # Per-site-in-cell defaults
+        self._default_species_per_s = np.zeros(self.spuck, dtype=np.int32)
+        self._site_type_per_s = np.zeros(self.spuck, dtype=np.int32)
+        self._site_layer_id_per_s = np.zeros(self.spuck, dtype=np.int32)
+
+        s_in_cell = 0
+        for layer_id, layer in enumerate(self.project.lattice.layers):
+            for site in layer.sites:
+                ds_name = getattr(site, 'default_species', 'empty')
                 if ds_name in self.species_id:
-                    default_sp = self.species_id[ds_name]
-
-        self.lattice = np.full(self.nsites, default_sp, dtype=np.int32)
-
-        # Site types array
-        self.site_types = np.zeros(self.nsites, dtype=np.int32)
-        if self.project.lattice.layers:
-            layer = self.project.lattice.layers[0]
-            if layer.sites and layer.sites[0].site_type is not None:
-                stype = layer.sites[0].site_type
+                    self._default_species_per_s[s_in_cell] = self.species_id[ds_name]
+                stype = getattr(site, 'site_type', None)
                 if isinstance(stype, int):
-                    self.site_types[:] = stype
+                    self._site_type_per_s[s_in_cell] = stype
+                self._site_layer_id_per_s[s_in_cell] = layer_id
+                s_in_cell += 1
+
+        # Tile per-site-in-cell defaults across all cells -> global arrays
+        if self.spuck >= 1:
+            self.lattice = np.tile(self._default_species_per_s, self.ncells)
+            self.site_types = np.tile(self._site_type_per_s, self.ncells)
+        else:
+            # Defensive: project has no layers/sites at all
+            self.lattice = np.zeros(self.nsites, dtype=np.int32)
+            self.site_types = np.zeros(self.nsites, dtype=np.int32)
 
     def _build_neighbor_list(self):
-        """Build nearest-neighbor list for the lattice."""
+        """Build nearest-neighbor list for the lattice.
+
+        Multi-lattice convention: "neighbor of site s" = the same
+        ``s_in_cell`` at the nearest-neighbor cells. This matches paper §2.3
+        of Hoffmann-Reuter 2015 — pairwise lateral interactions are
+        within-layer (same site type) at NN cells. For ``spuck=1`` (legacy
+        single-layer), this is identical to the previous cell-only NN list.
+        """
         self.neighbors = [[] for _ in range(self.nsites)]
         nn_offsets = self._get_nn_offsets()
 
         for s in range(self.nsites):
+            s_in_cell = self._site_in_cell(s)
             coord = self._site_to_coord(s)
             for offset in nn_offsets:
                 nc = tuple(c + o for c, o in zip(coord, offset))
-                ns = self._coord_to_site(nc)
+                ns = self._coord_to_site(nc, s_in_cell)
                 if ns != s:
                     self.neighbors[s].append(ns)
 
@@ -240,7 +275,15 @@ class KMCEngine:
             self._bep_by_name = dict(self.project.bep_relations)
 
     def _init_processes(self):
-        """Convert process definitions to numeric arrays for fast lookup."""
+        """Convert process definitions to numeric arrays for fast lookup.
+
+        Each condition/action is stored as a 3-tuple
+        ``(cell_offset, s_in_cell, sp_id)`` where ``s_in_cell`` is the
+        layer-folded site-within-cell index resolved from ``Coord.layer`` and
+        ``Coord.site``. For single-layer 1-site models, all coords resolve
+        to ``s_in_cell = 0`` and behavior matches the pre-multi-lattice
+        engine byte-for-byte.
+        """
         self.nproc = len(self.project.process_list)
         self.process_names = [p.name for p in self.project.process_list]
 
@@ -250,19 +293,22 @@ class KMCEngine:
         self._proc_tof_count = []
         self._proc_site_types = []
 
+        lat = self.project.lattice
         for proc in self.project.process_list:
             conds = []
             for c in proc.conditions:
                 offset = c.coord.offset[:self.ndim]
                 sp_id = self.species_id[c.species]
-                conds.append((offset, sp_id))
+                s_in_cell = self._resolve_s_in_cell(c.coord)
+                conds.append((offset, s_in_cell, sp_id))
             self._proc_conditions.append(conds)
 
             acts = []
             for a in proc.actions:
                 offset = a.coord.offset[:self.ndim]
                 sp_id = self.species_id[a.species]
-                acts.append((offset, sp_id))
+                s_in_cell = self._resolve_s_in_cell(a.coord)
+                acts.append((offset, s_in_cell, sp_id))
             self._proc_actions.append(acts)
 
             self._proc_rate_exprs.append(proc.rate_constant)
@@ -283,15 +329,38 @@ class KMCEngine:
 
         self._rebuild_avail_sites()
 
+    def _resolve_s_in_cell(self, coord):
+        """Resolve a Coord's (layer, site) pair to a site-within-cell index.
+
+        Returns 0 when layer/site are unspecified or when only one layer with
+        one site exists (legacy single-layer models). Falls back gracefully
+        for partial coords to preserve back-compat with legacy callers that
+        didn't supply layer info explicitly.
+        """
+        lat = self.project.lattice
+        if not lat.layers:
+            return 0
+        layer_name = getattr(coord, 'layer', None)
+        site_name = getattr(coord, 'site', None)
+        if layer_name is None and site_name is None:
+            return 0
+        if layer_name is None:
+            layer_name = lat.layers[0].name
+        try:
+            return lat.site_in_cell_id(layer_name, site_name) if site_name \
+                else lat.layer_offset(layer_name)
+        except KeyError:
+            return 0
+
     def _compute_max_offset(self):
-        """Find the maximum offset range across all process conditions."""
+        """Find the maximum cell-offset range across all process conditions."""
         max_r = 1
         for conds in self._proc_conditions:
-            for offset, _ in conds:
+            for offset, _s_in_cell, _sp in conds:
                 for o in offset:
                     max_r = max(max_r, abs(o) + 1)
         for acts in self._proc_actions:
-            for offset, _ in acts:
+            for offset, _s_in_cell, _sp in acts:
                 for o in offset:
                     max_r = max(max_r, abs(o) + 1)
         self._max_offset = max_r
@@ -301,31 +370,50 @@ class KMCEngine:
     # ----------------------------------------------------------------
 
     def _site_to_coord(self, site):
+        """Map global flat site index -> cell coord (cx, cy[, cz]).
+
+        For multi-lattice, each cell contains ``spuck`` sites; this returns
+        only the cell coord. Use ``self._site_in_cell(site)`` to recover the
+        site-within-cell index. For single-layer 1-site models (spuck=1),
+        this is a no-op identity.
+        """
+        cell_id = site // self.spuck
         if self.ndim == 1:
-            return (site,)
+            return (cell_id,)
         elif self.ndim == 2:
-            return (site // self.lattice_size[1],
-                    site % self.lattice_size[1])
+            return (cell_id // self.lattice_size[1],
+                    cell_id % self.lattice_size[1])
         else:
             Ly = self.lattice_size[1]
             Lz = self.lattice_size[2]
-            return (site // (Ly * Lz),
-                    (site % (Ly * Lz)) // Lz,
-                    site % Lz)
+            return (cell_id // (Ly * Lz),
+                    (cell_id % (Ly * Lz)) // Lz,
+                    cell_id % Lz)
 
-    def _coord_to_site(self, coord):
+    def _coord_to_site(self, coord, s_in_cell=0):
+        """Map (cell coord, site-within-cell) -> global flat site index.
+
+        ``s_in_cell`` defaults to 0 for back-compat: legacy callers passing
+        only a cell coord get the first site of that cell, which for
+        single-layer 1-site models is the only site.
+        """
         if self.ndim == 1:
-            return coord[0] % self.lattice_size[0]
+            cell_id = coord[0] % self.lattice_size[0]
         elif self.ndim == 2:
             x = coord[0] % self.lattice_size[0]
             y = coord[1] % self.lattice_size[1]
-            return x * self.lattice_size[1] + y
+            cell_id = x * self.lattice_size[1] + y
         else:
             x = coord[0] % self.lattice_size[0]
             y = coord[1] % self.lattice_size[1]
             z = coord[2] % self.lattice_size[2]
-            return (x * self.lattice_size[1] * self.lattice_size[2]
-                    + y * self.lattice_size[2] + z)
+            cell_id = (x * self.lattice_size[1] * self.lattice_size[2]
+                       + y * self.lattice_size[2] + z)
+        return cell_id * self.spuck + s_in_cell
+
+    def _site_in_cell(self, site):
+        """Site-within-cell index (= layer-folded index) for a global site."""
+        return site % self.spuck
 
     # ----------------------------------------------------------------
     # Available sites bookkeeping
@@ -341,9 +429,9 @@ class KMCEngine:
 
         # Check species conditions
         coord = self._site_to_coord(site)
-        for offset, sp_id in self._proc_conditions[proc_id]:
+        for offset, s_in_cell, sp_id in self._proc_conditions[proc_id]:
             neighbor = tuple(c + o for c, o in zip(coord, offset))
-            if self.lattice[self._coord_to_site(neighbor)] != sp_id:
+            if self.lattice[self._coord_to_site(neighbor, s_in_cell)] != sp_id:
                 return False
         return True
 
@@ -408,13 +496,13 @@ class KMCEngine:
         # Fast path: single-site process with max_offset <= 1
         # Use neighbor list directly (5 sites in 2D vs 9 from grid)
         if len(actions) == 1 and self._max_offset <= 1:
-            offset, _ = actions[0]
-            if all(o == 0 for o in offset):
+            offset, s_in_cell, _sp = actions[0]
+            if all(o == 0 for o in offset) and s_in_cell == self._site_in_cell(site):
                 action_site = site
             else:
                 coord = self._site_to_coord(site)
                 nc = tuple(c + o for c, o in zip(coord, offset))
-                action_site = self._coord_to_site(nc)
+                action_site = self._coord_to_site(nc, s_in_cell)
             affected = set(self.neighbors[action_site])
             affected.add(action_site)
             return affected
@@ -423,29 +511,35 @@ class KMCEngine:
         coord = self._site_to_coord(site)
         affected = set()
         r = self._max_offset
+        spuck = self.spuck
 
         changed_coords = []
-        for offset, _ in actions:
+        for offset, _s_in_cell, _sp in actions:
             nc = tuple(c + o for c, o in zip(coord, offset))
             changed_coords.append(nc)
 
+        # For each affected cell, mark all spuck sites as potentially affected
+        # (conservative; for spuck=1 this is identical to legacy single-site).
         if self.ndim == 1:
             for cc in changed_coords:
                 for dx in range(-r, r + 1):
-                    affected.add(self._coord_to_site((cc[0] + dx,)))
+                    for k in range(spuck):
+                        affected.add(self._coord_to_site((cc[0] + dx,), k))
         elif self.ndim == 2:
             for cc in changed_coords:
                 for dx in range(-r, r + 1):
                     for dy in range(-r, r + 1):
-                        affected.add(self._coord_to_site(
-                            (cc[0] + dx, cc[1] + dy)))
+                        for k in range(spuck):
+                            affected.add(self._coord_to_site(
+                                (cc[0] + dx, cc[1] + dy), k))
         else:
             for cc in changed_coords:
                 for dx in range(-r, r + 1):
                     for dy in range(-r, r + 1):
                         for dz in range(-r, r + 1):
-                            affected.add(self._coord_to_site(
-                                (cc[0] + dx, cc[1] + dy, cc[2] + dz)))
+                            for k in range(spuck):
+                                affected.add(self._coord_to_site(
+                                    (cc[0] + dx, cc[1] + dy, cc[2] + dz), k))
 
         return affected
 
@@ -532,19 +626,19 @@ class KMCEngine:
 
         # Collect sites involved in this process (to exclude from counting)
         proc_sites = set()
-        for offset, _ in entries:
+        for offset, s_in_cell, _sp in entries:
             ps = self._coord_to_site(
-                tuple(c + o for c, o in zip(coord, offset)))
+                tuple(c + o for c, o in zip(coord, offset)), s_in_cell)
             proc_sites.add(ps)
 
         E_total = 0.0
         n_entries = len(entries)
-        for offset, sp_id in entries:
+        for offset, s_in_cell, sp_id in entries:
             if sp_id == self._empty_species:
                 continue
 
             entry_site = self._coord_to_site(
-                tuple(c + o for c, o in zip(coord, offset)))
+                tuple(c + o for c, o in zip(coord, offset)), s_in_cell)
 
             for nn in self.neighbors[entry_site]:
                 if n_entries > 1 and nn in proc_sites:
@@ -635,9 +729,9 @@ class KMCEngine:
 
         # Execute: update lattice
         coord = self._site_to_coord(site)
-        for offset, new_sp in self._proc_actions[proc_id]:
+        for offset, s_in_cell, new_sp in self._proc_actions[proc_id]:
             neighbor = tuple(c + o for c, o in zip(coord, offset))
-            self.lattice[self._coord_to_site(neighbor)] = new_sp
+            self.lattice[self._coord_to_site(neighbor, s_in_cell)] = new_sp
 
         # Update bookkeeping
         affected = self._get_affected_sites(

@@ -157,11 +157,62 @@ class BEPRelation:
 
 
 class Lattice:
-    """Lattice geometry definition."""
+    """Lattice geometry definition.
+
+    Multi-lattice support (Hoffmann-Reuter-Scheffler 2015): all coexisting
+    sub-lattices share one physical ``cell`` and live as separate ``Layer``
+    objects in ``layers``. The user supplies a commensurate super-cell large
+    enough to embed every primitive cell. ``default_layer`` and
+    ``substrate_layer`` follow kmcos convention (former is the layer the
+    model starts in by default; latter is the always-present scaffold).
+    """
 
     def __init__(self):
         self.cell = np.diag([1.0, 1.0, 1.0])
         self.layers = []
+        self.default_layer = None
+        self.substrate_layer = None
+
+    @property
+    def spuck(self):
+        """Sites Per Unit Cell — total sites across all layers."""
+        return sum(len(layer.sites) for layer in self.layers)
+
+    def layer_offset(self, layer_name):
+        """Return the cumulative site offset within a unit cell at which
+        ``layer_name`` begins. Layer 0's sites occupy [0, len(layer0.sites));
+        layer 1's sites occupy [len(layer0.sites), len(layer0.sites)+len(layer1.sites)); etc.
+        """
+        offset = 0
+        for layer in self.layers:
+            if layer.name == layer_name:
+                return offset
+            offset += len(layer.sites)
+        raise KeyError(f"Layer '{layer_name}' not found")
+
+    def site_in_cell_id(self, layer_name, site_name):
+        """Resolve (layer_name, site_name) to its index in [0, spuck)."""
+        offset = self.layer_offset(layer_name)
+        for layer in self.layers:
+            if layer.name == layer_name:
+                for i, site in enumerate(layer.sites):
+                    if site.name == site_name:
+                        return offset + i
+                raise KeyError(
+                    f"Site '{site_name}' not found in layer '{layer_name}'")
+        raise KeyError(f"Layer '{layer_name}' not found")
+
+    def site_in_cell_to_layer(self, s):
+        """Inverse: which layer does site-in-cell index ``s`` belong to?
+        Returns (layer_name, site_in_layer_idx).
+        """
+        offset = 0
+        for layer in self.layers:
+            n = len(layer.sites)
+            if s < offset + n:
+                return layer.name, s - offset
+            offset += n
+        raise IndexError(f"site_in_cell index {s} out of range [0, {offset})")
 
     def generate_coord(self, description):
         """
@@ -239,6 +290,10 @@ class Project:
         if layer is None:
             layer = Layer(name=name or 'default')
         self.lattice.layers.append(layer)
+        if self.lattice.default_layer is None:
+            self.lattice.default_layer = layer.name
+        if self.lattice.substrate_layer is None:
+            self.lattice.substrate_layer = layer.name
         return layer
 
     def add_parameter(self, name, value=0.0, **kwargs):

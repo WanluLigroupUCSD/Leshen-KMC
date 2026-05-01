@@ -13,6 +13,13 @@ A unified KMC framework for heterogeneous catalysis combining:
     - Butler-Volmer electrochemical rates
     - Mean-field microkinetic ODE solver
     - Polarization curve computation
+    - Multi-lattice kMC (Hoffmann-Reuter-Scheffler 2015):
+        super-lattice with N coexisting commensurate Layers,
+        cross-layer "lattice-swap" elementary processes for
+        morphological transitions (oxide<->metal, surface
+        reconstruction, phase boundary propagation),
+        spuck-based 1D site indexing folding layer membership
+        into site-within-cell index. See docs/multi_lattice_design.md.
 
   Off-Lattice KMC (spark.offlattice):
     - On-the-fly saddle point search (dimer method)
