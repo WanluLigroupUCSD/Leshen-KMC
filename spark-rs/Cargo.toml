@@ -4,12 +4,32 @@ version = "0.4.0"
 edition = "2021"
 description = "Kinetic Monte Carlo (lattice + off-lattice) & Microkinetic Modeling for heterogeneous catalysis"
 
+[lib]
+name = "spark_rs"
+# cdylib: produce a .so loadable by Python via PyO3 extension-module
+# rlib:   keep available for the spark CLI binary (links against the same code)
+crate-type = ["cdylib", "rlib"]
+
+# `python` feature gates all PyO3 / numpy bindings. maturin build turns it on.
+# `cargo build --bin spark` (no features) builds the CLI without libpython
+# link issues.
+[features]
+default = []
+python = ["dep:pyo3", "dep:numpy", "pyo3/extension-module"]
+
 [dependencies]
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
+pyo3 = { version = "0.22", features = ["abi3-py310"], optional = true }
+numpy = { version = "0.22", optional = true }
 
 [[bin]]
 name = "spark"
 path = "src/main.rs"
+required-features = []
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

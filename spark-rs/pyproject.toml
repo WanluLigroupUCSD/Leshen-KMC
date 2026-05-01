@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "spark_rs"
+version = "0.4.0"
+description = "SPARK Rust acceleration for off-lattice OTF KMC saddle search and supporting kernels"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+
+[tool.maturin]
+# Turn on the crate's `python` feature, which transitively pulls in
+# pyo3/extension-module + numpy. The CLI binary in src/main.rs builds
+# fine without this feature via `cargo build --bin spark`.
+features = ["python"]
+# Use abi3 forward-compatible ABI (abi3-py310): one wheel works for cpython >= 3.10
+python-source = "python"
+module-name = "spark_rs._native"
