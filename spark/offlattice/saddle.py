@@ -199,11 +199,21 @@ class DimerSearch:
             dg = g_plus - g_minus
             curvature = np.sum(dg * axis) / (2.0 * h)
 
-            # Rotational force (torque)
-            # F_rot = dg/2h - (dg/2h . axis) * axis
+            # Rotor "torque" — we want to MINIMIZE curvature
+            #     κ(N̂) = dg · N̂ / (2h),
+            # whose gradient in N̂-space is dg/(2h). To DECREASE κ we step in
+            # direction -dg/(2h), projected perpendicular to N̂ to keep |N̂|=1.
+            #
+            # Sign fix 2026-05-01 (a3d6b14 in Rust, mirrored here): the
+            # original openFLY-derived port had a missing minus sign. The
+            # rotor was rotating axis toward HIGHER curvature, so most random
+            # initial axes hit convex exits before finding a saddle. SPARK
+            # production OTF runs on Cu slab benchmark show 1/20 success rate
+            # without this fix; 20/20 with it. See spark-rs/src/offlattice/
+            # saddle.rs for the Rust counterpart and Phase D bench results.
             dg_per_2h = dg / (2.0 * h)
             proj = np.sum(dg_per_2h * axis)
-            torque = dg_per_2h - proj * axis
+            torque = -(dg_per_2h - proj * axis)
 
             if frozen is not None:
                 torque[frozen] = 0.0
