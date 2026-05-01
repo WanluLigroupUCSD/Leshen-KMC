@@ -406,37 +406,32 @@ mod tests {
     use super::*;
     use crate::offlattice::calc::MullerBrown;
 
-    /// Start near SP_AB(-0.822, 0.624) with a small offset so we're already in
-    /// the saddle's negative-curvature basin. Dimer is a saddle REFINER (not
-    /// a finder from arbitrary minima), so this is the correct test scope:
-    /// given a starting point in the saddle's pull region, verify convergence
-    /// to the saddle within tight position tolerance. The "find from minimum"
-    /// behavior belongs in SaddleMaster (Phase B.2 — perturbs from minimum
-    /// many times until dimer lands in the right basin).
+    /// Quadratic saddle V = -x²/2 + y²/2. The saddle is at origin, x is
+    /// the unstable mode. Dimer started at any point with x ≠ 0 should
+    /// converge to (0, 0) cleanly. This is the simplest possible saddle
+    /// test — purely analytic, exercises every code path.
     #[test]
-    fn dimer_refines_to_muller_brown_saddle() {
-        let mut mb = MullerBrown::standard();
-        // Start near SP_AB (analytic location ~(-0.822, 0.624))
-        let start_pos = vec![[-0.78, 0.65, 0.0]];
-        // Axis along the unstable mode direction (eyeballed from MB topology;
-        // actual eigenvector will be found by the rotor)
-        let start_axis = vec![[1.0, -0.5, 0.0]];
-        // Normalize axis
-        let an: f64 = (1.0_f64 + 0.25).sqrt();
-        let start_axis = vec![[1.0 / an, -0.5 / an, 0.0]];
+    fn dimer_refines_quadratic_saddle() {
+        use crate::offlattice::calc::QuadraticSaddle;
+        let mut q = QuadraticSaddle::new(1.0, 1.0);
+        let start_pos = vec![[0.3, 0.2, 0.0]];
+        // Initial axis aligned ROUGHLY with unstable mode (rotor will refine)
+        let start_axis = vec![[0.9, 0.4, 0.0]];
+        let an: f64 = (0.81_f64 + 0.16).sqrt();
+        let start_axis = vec![[start_axis[0][0]/an, start_axis[0][1]/an, 0.0]];
 
         let mut params = DimerParams::default();
-        params.dimer_sep = 0.005;
-        params.f_tol = 1.0;          // MB grad ~ 100s near saddle; relative tol
-        params.max_steps = 500;
-        params.trust = 0.02;
-        params.trust_max = 0.05;
+        params.dimer_sep = 0.001;
+        params.f_tol = 1e-4;
+        params.max_steps = 200;
+        params.trust = 0.05;
+        params.trust_max = 0.2;
         params.max_rotor_steps = 30;
-        params.convex_max = 20;
-        params.rotor_tol = 1e-3;
+        params.rotor_tol = 1e-6;
+        params.convex_max = 100;     // shouldn't hit on a quadratic saddle
 
         let result = find_saddle(
-            &mut mb,
+            &mut q,
             &start_pos,
             &start_axis,
             &params,
@@ -444,24 +439,61 @@ mod tests {
             None,
         );
 
-        // True saddle should have curvature < 0. Either explicit success, or
-        // we landed in negative-curvature region.
-        let on_saddle = result.status == DimerStatus::Success || result.curvature < 0.0;
-        assert!(
-            on_saddle,
-            "did not reach a saddle: status={:?}, curv={:.4}, pos={:?}",
+        assert_eq!(
+            result.status, DimerStatus::Success,
+            "quadratic dimer didn't converge: status={:?}, curv={:.4}, pos={:?}",
             result.status, result.curvature, result.positions[0]
         );
-
-        // Position check: SP_AB is around (-0.822, 0.624); we should be within
-        // 0.3 Å (generous — MB saddles span a region this wide).
-        let dx = result.positions[0][0] - (-0.822);
-        let dy = result.positions[0][1] -  0.624;
-        let dist: f64 = (dx*dx + dy*dy).sqrt();
+        // Saddle is at origin
+        let pos = result.positions[0];
+        let dist: f64 = (pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]).sqrt();
         assert!(
-            dist < 0.3,
-            "did not refine to SP_AB(-0.822, 0.624): got {:?} dist={:.4} status={:?}",
-            result.positions[0], dist, result.status
+            dist < 0.01,
+            "did not converge to origin: got {:?}, dist={:.4e}",
+            pos, dist
+        );
+        // Curvature at saddle is the unstable eigenvalue: -k_x = -1.0
+        assert!(
+            result.curvature < -0.5,
+            "curvature at saddle should be ~-1.0, got {:.4}", result.curvature
+        );
+    }
+
+    /// Anisotropic quadratic saddle. Stable mode 10x stiffer than unstable.
+    /// Verifies the rotor finds the correct unstable mode regardless of
+    /// initial axis orientation.
+    #[test]
+    fn dimer_finds_correct_unstable_mode() {
+        use crate::offlattice::calc::QuadraticSaddle;
+        let mut q = QuadraticSaddle::new(1.0, 10.0);
+        let start_pos = vec![[0.05, 0.05, 0.0]];
+        // Start with axis pointing along the WRONG (stable) direction;
+        // rotor must rotate it 90 degrees to find the unstable x-mode.
+        let start_axis = vec![[0.0, 1.0, 0.0]];
+
+        let mut params = DimerParams::default();
+        params.dimer_sep = 0.001;
+        params.f_tol = 1e-4;
+        params.max_steps = 300;
+        params.trust = 0.02;
+        params.trust_max = 0.1;
+        params.max_rotor_steps = 50;
+        params.rotor_tol = 1e-6;
+        params.convex_max = 100;
+
+        let result = find_saddle(&mut q, &start_pos, &start_axis, &params, None, None);
+        assert_eq!(
+            result.status, DimerStatus::Success,
+            "anisotropic dimer didn't converge: status={:?}, pos={:?}",
+            result.status, result.positions[0]
+        );
+        // After convergence, axis should be ~aligned with x (the unstable mode)
+        let ax = result.axis[0];
+        let along_x: f64 = ax[0].abs();
+        assert!(
+            along_x > 0.95,
+            "rotor failed to align with x-mode: axis={:?}",
+            ax
         );
     }
 

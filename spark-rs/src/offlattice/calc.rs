@@ -112,6 +112,37 @@ impl Calculator for MullerBrown {
     }
 }
 
+// ===========================================================================
+//                  ANALYTIC QUADRATIC SADDLE (test fixture)
+// ===========================================================================
+//
+// V(x, y) = -k_x * x^2 / 2 + k_y * y^2 / 2
+// Saddle at origin: x is unstable mode (curvature -k_x), y is stable (+k_y).
+// dE/dx = -k_x * x       dE/dy = k_y * y
+//
+// Used to verify dimer convergence on a clean, analytically-solved problem.
+
+/// Quadratic 2D saddle, embedded in 3D (z ignored).
+pub struct QuadraticSaddle {
+    pub k_x: f64,  // unstable mode spring constant (>0; PES has -k_x*x²/2)
+    pub k_y: f64,  // stable mode spring constant
+}
+
+impl QuadraticSaddle {
+    pub fn new(k_x: f64, k_y: f64) -> Self { Self { k_x, k_y } }
+}
+
+impl Calculator for QuadraticSaddle {
+    fn eval(&mut self, positions: &[[f64; 3]]) -> (f64, Vec<[f64; 3]>) {
+        let x = positions[0][0];
+        let y = positions[0][1];
+        let e = -0.5 * self.k_x * x * x + 0.5 * self.k_y * y * y;
+        let mut grad = vec![[0.0; 3]; positions.len()];
+        grad[0] = [-self.k_x * x, self.k_y * y, 0.0];
+        (e, grad)
+    }
+}
+
 // ---------------------------------------------------------------------------
 //                                TESTS
 // ---------------------------------------------------------------------------
