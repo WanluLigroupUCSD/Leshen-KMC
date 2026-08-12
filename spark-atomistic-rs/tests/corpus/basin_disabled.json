@@ -1,0 +1,4 @@
+{
+  "enabled": false,
+  "reason": "no internal catalog/discovery completeness validator exists"
+}

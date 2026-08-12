@@ -1,0 +1,10 @@
+{
+  "schema": "spark-atomistic-test-corpus/1",
+  "algorithm": "Philox4x32-10:errata-1-midpoint52",
+  "boundary_cases": [
+    {"a": 0, "b": 0, "q": 0, "bits": "0x3ca0000000000000"},
+    {"a": 4294967295, "b": 4294963200, "q": 4503599627370495, "bits": "0x3fefffffffffffff"}
+  ],
+  "zero_counter_zero_key_words": [1713891541, 3781805453, 3159862348, 2600524760],
+  "executed": false
+}
