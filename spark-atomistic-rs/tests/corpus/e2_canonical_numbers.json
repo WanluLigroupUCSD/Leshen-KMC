@@ -1,0 +1,13 @@
+{
+  "cases":[
+    {"binary64":"negative-zero","canonical":"0"},
+    {"binary64":"0x3eb0c6f7a0b5ed8d","canonical":"0.000001"},
+    {"binary64":"0x3eb0c6f7a0b5ed8c","canonical":"9.999999999999997e-7"},
+    {"binary64":"0x3eb0c6f7a0b5ed8e","canonical":"0.0000010000000000000002"},
+    {"binary64":"0x444b1ae4d6e2ef50","canonical":"1e+21"},
+    {"binary64":"0x444b1ae4d6e2ef4f","canonical":"9.999999999999999e+20"},
+    {"binary64":"0x444b1ae4d6e2ef51","canonical":"1.0000000000000001e+21"}
+  ],
+  "integer_max":9007199254740991,
+  "integer_min":-9007199254740991
+}

@@ -1,0 +1,21 @@
+# Clean-room manifest for OFFLATTICE_OTF_KMC_SPEC_V1 + ERRATA_1.
+# Independently authored; no implementation source consulted.
+[package]
+name = "spark-atomistic-rs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Clean-room fixed-composition off-lattice/on-the-fly KMC core"
+license-file = "LICENSE"
+publish = false
+
+[lib]
+name = "spark_atomistic_rs"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "=1.0.219", features = ["derive"] }
+serde_json = { version = "=1.0.140", features = ["preserve_order", "float_roundtrip"] }
+sha2 = "=0.10.8"
+
+[dev-dependencies]
